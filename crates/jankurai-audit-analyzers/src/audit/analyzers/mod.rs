@@ -145,3 +145,128 @@ pub fn ux_qa_status(ctx: &AuditContext) -> UxQaReadiness {
         artifact: None,
     }
 }
+
+#[cfg(test)]
+mod calibration_tests {
+    use jankurai_audit_kernel::audit::helpers::AuditContext;
+    use jankurai_audit_kernel::model::FileInfo;
+
+    fn product_file(rel_path: &str, text: &str) -> FileInfo {
+        let path = std::path::PathBuf::from(rel_path);
+        FileInfo {
+            rel_path: rel_path.into(),
+            name: path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            suffix: path
+                .extension()
+                .map(|ext| format!(".{}", ext.to_string_lossy()))
+                .unwrap_or_default(),
+            size: text.len() as u64,
+            line_count: text.lines().count(),
+            text: text.into(),
+            is_generated: false,
+            is_code: true,
+        }
+    }
+
+    fn make_ctx(files: Vec<FileInfo>) -> AuditContext {
+        AuditContext {
+            root: std::path::PathBuf::from("."),
+            scope_files: files.clone(),
+            all_files: files,
+            scope_paths: vec![],
+            self_audit: false,
+            boundary_reclassifications: vec![],
+            copy_code: None,
+        }
+    }
+
+    #[test]
+    fn data_truth_does_not_apply_without_a_database() {
+        let no_db = make_ctx(vec![product_file(
+            "src/main.rs",
+            "fn main() { println!(\"hi\"); }\n",
+        )]);
+        let dim = super::data::analyze(&no_db);
+        assert_eq!(dim.score, 90, "{:?}", dim.evidence);
+        // A driver in a dependency manifest is a database even without db/ or SQL.
+        let driver_only = make_ctx(vec![
+            product_file("src/main.rs", "fn main() {}\n"),
+            product_file("Cargo.toml", "[dependencies]\nsqlx = \"0.8\"\n"),
+        ]);
+        let dim = super::data::analyze(&driver_only);
+        assert!(
+            !dim.evidence.iter().any(|e| e.contains("do not apply")),
+            "a driver dependency must be judged: {:?}",
+            dim.evidence
+        );
+        let with_db = make_ctx(vec![
+            product_file("src/main.rs", "use sqlx::PgPool;\n"),
+            product_file("migrations/0001_init.sql", "CREATE TABLE t (id int);\n"),
+        ]);
+        let dim = super::data::analyze(&with_db);
+        assert!(
+            !dim.evidence.iter().any(|e| e.contains("do not apply")),
+            "a repository with a database must be judged: {:?}",
+            dim.evidence
+        );
+    }
+
+    #[test]
+    fn build_speed_reaches_the_floor_with_generic_signals() {
+        let justfile = "\ncheck:\n    cargo check -p app\nfast:\n    cargo nextest run -p app\n";
+        let ci = "jobs:\n  ci:\n    steps:\n      - uses: actions/cache@v4\n      - run: cargo check -p app\n";
+        let ctx = make_ctx(vec![
+            product_file("Justfile", justfile),
+            product_file("Cargo.lock", "# lock\n"),
+            product_file(".github/workflows/ci.yml", ci),
+        ]);
+        let dim = super::speed::analyze(&ctx);
+        assert!(
+            dim.score >= 85,
+            "score {} evidence {:?} notes {:?}",
+            dim.score,
+            dim.evidence,
+            dim.notes
+        );
+    }
+
+    #[test]
+    fn dependency_audits_are_judged_per_ecosystem() {
+        let rust_only = make_ctx(vec![
+            product_file("Cargo.lock", "# lock\n"),
+            product_file("ops/ci/security.sh", "cargo deny check\ngitleaks detect\n"),
+        ]);
+        let dim = super::security::analyze(&rust_only);
+        assert!(
+            dim.evidence
+                .iter()
+                .any(|e| e.contains("every dependency ecosystem")),
+            "a Rust-only repo with cargo deny should earn the audit credit: {:?}",
+            dim.evidence
+        );
+        assert!(
+            dim.evidence
+                .iter()
+                .any(|e| e.contains("scripted security lane")),
+            "an ops/ci security script should count as the lane wrapper: {:?}",
+            dim.evidence
+        );
+        let mixed_uncovered = make_ctx(vec![
+            product_file("Cargo.lock", "# lock\n"),
+            product_file("package-lock.json", "{}\n"),
+            product_file("ops/ci/security.sh", "cargo deny check\n"),
+        ]);
+        let dim = super::security::analyze(&mixed_uncovered);
+        assert!(
+            !dim.evidence
+                .iter()
+                .any(|e| e.contains("every dependency ecosystem")),
+            "npm deps without an npm audit must not earn the credit: {:?}",
+            dim.evidence
+        );
+    }
+}

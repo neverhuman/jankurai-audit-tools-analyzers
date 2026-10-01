@@ -56,13 +56,9 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
     } else {
         notes.push("no explicit security lane found".into());
     }
-    if ctx
-        .all_files
-        .iter()
-        .any(|f| f.rel_path == "tools/security-lane.sh")
-    {
+    if has_security_lane_script(ctx) {
         score += 6;
-        evidence.push("canonical security lane wrapper present".into());
+        evidence.push("scripted security lane wrapper present".into());
     }
     if has_jankurai_audit_ci_lane(ctx) {
         score += 6;
@@ -139,9 +135,10 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
             evidence.push(format!("{label} bad-behavior advisory signals: {advisory}"));
         }
     }
-    if security_text.contains("cargo audit") && security_text.contains("npm audit") {
+    let audits_cover_ecosystems = dependency_audits_cover_ecosystems(ctx, &security_text);
+    if audits_cover_ecosystems {
         score += 8;
-        evidence.push("Rust and npm dependency audits are operational commands".into());
+        evidence.push("every dependency ecosystem present has an operational audit command".into());
     }
     if security_text.contains("gitleaks detect") {
         score += 6;
@@ -150,9 +147,8 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
     if hard_language_findings == 0
         && has_security_lane(ctx)
         && has_jankurai_audit_ci_lane(ctx)
-        && security_text.contains("tools/security-lane.sh")
-        && security_text.contains("cargo audit")
-        && security_text.contains("npm audit")
+        && has_security_lane_script(ctx)
+        && audits_cover_ecosystems
         && security_text.contains("gitleaks detect")
         && ["syft", "grype", "slsa", "sbom", "cosign"]
             .iter()
@@ -167,4 +163,42 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         );
     }
     make_dim("Security and supply-chain posture", score, evidence, notes)
+}
+
+/// Dependency audits are judged per ecosystem the repository actually has: a Rust-only
+/// repository needs a Rust audit, not `npm audit` as well.
+fn dependency_audits_cover_ecosystems(ctx: &AuditContext, security_text: &str) -> bool {
+    let has = |names: &[&str]| {
+        ctx.all_files
+            .iter()
+            .any(|f| names.contains(&f.name.as_str()))
+    };
+    let covered = |cmds: &[&str]| cmds.iter().any(|c| security_text.contains(c));
+    let ecosystems = [
+        (
+            has(&["Cargo.lock"]),
+            covered(&["cargo audit", "cargo deny", "cargo-audit", "cargo-deny"]),
+        ),
+        (
+            has(&["package-lock.json", "pnpm-lock.yaml", "yarn.lock"]),
+            covered(&[
+                "npm audit",
+                "pnpm audit",
+                "yarn audit",
+                "yarn npm audit",
+                "osv-scanner",
+            ]),
+        ),
+        (
+            has(&["poetry.lock", "uv.lock", "requirements.txt"]),
+            covered(&["pip-audit", "safety check", "osv-scanner"]),
+        ),
+        (has(&["go.sum"]), covered(&["govulncheck", "osv-scanner"])),
+    ];
+    let present: Vec<bool> = ecosystems
+        .iter()
+        .filter(|(p, _)| *p)
+        .map(|(_, c)| *c)
+        .collect();
+    !present.is_empty() && present.iter().all(|c| *c)
 }

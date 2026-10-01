@@ -68,12 +68,19 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         score += 10;
         evidence.push("CI cache hint found".into());
     }
-    if !has_one_command(ctx) {
-        score -= 10;
+    // One-command setup and a deterministic fast lane are the generic signals that let an
+    // ordinary well-run repository reach the floor; before, they only avoided a penalty and
+    // the last points needed this project's own command strings, capping everyone else at 80.
+    if has_one_command(ctx) {
+        score += 10;
+        evidence.push("one-command setup/validation found".into());
+    } else {
         notes.push("missing one-command setup/validation".into());
     }
-    if !has_fast_lane(ctx) {
-        score -= 10;
+    if has_fast_lane(ctx) {
+        score += 10;
+        evidence.push("deterministic fast lane found".into());
+    } else {
         notes.push("missing deterministic fast lane".into());
     }
     if real_command_surface_contains(ctx, &["cargo check"])

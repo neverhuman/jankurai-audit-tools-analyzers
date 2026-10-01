@@ -14,10 +14,20 @@ pub struct CiLocalParitySummary {
     pub advisory_signals: usize,
 }
 
+/// Only a workflow that calls a script which does not exist is broken CI. The rest of the
+/// scaffold (thin workflows, `scripts/ci-local.sh`, `scripts/ci-doctor.sh`, `ops/ci/lib.sh`, a
+/// pinned toolchain, a pre-push hook) is this standard's preferred layout: reported, but
+/// advisory, so it neither caps the score nor fails the gate on its own.
+pub fn is_hard(finding: &LanguageFinding) -> bool {
+    finding.matched_term == "ci.local-parity.script-missing"
+}
+
 pub fn summary(ctx: &AuditContext) -> CiLocalParitySummary {
+    let all = findings(ctx);
+    let hard = all.iter().filter(|f| is_hard(f)).count();
     CiLocalParitySummary {
-        hard_findings: findings(ctx).len(),
-        advisory_signals: 0,
+        hard_findings: hard,
+        advisory_signals: all.len() - hard,
     }
 }
 
@@ -225,6 +235,30 @@ mod tests {
             boundary_reclassifications: vec![],
             copy_code: None,
         }
+    }
+
+    #[test]
+    fn only_a_missing_referenced_script_is_hard() {
+        let inlined =
+            "jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: cargo test\n";
+        let scaffold_only = ctx(vec![file(".github/workflows/ci.yml", inlined)]);
+        let summary = summary(&scaffold_only);
+        assert_eq!(
+            summary.hard_findings, 0,
+            "the preferred scaffold is advisory"
+        );
+        assert!(
+            summary.advisory_signals > 0,
+            "scaffold gaps are still reported"
+        );
+
+        let broken = "jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash ops/ci/quality-gates.sh\n";
+        let broken_ctx = ctx(vec![file(".github/workflows/ci.yml", broken)]);
+        assert_eq!(
+            super::summary(&broken_ctx).hard_findings,
+            1,
+            "a workflow calling a missing script is broken CI"
+        );
     }
 
     #[test]

@@ -555,6 +555,10 @@ pub fn load_score_ingest(root: &Path) -> CoverageScoreIngest {
     let artifact_path = root.join(DEFAULT_JSON_PATH);
     if !artifact_path.is_file() {
         if config_present {
+            // A clean checkout never holds `target/` output, so in a clean audit (the gate's,
+            // a runner's) this artifact is always absent. Report that the lane has not run in
+            // the summary, but do not raise a finding no clean audit could ever clear: the
+            // coverage lane's own CI job is what runs it.
             return CoverageScoreIngest {
                 summary: Some(CoverageEvidenceSummary {
                     artifact: DEFAULT_JSON_PATH.into(),
@@ -562,23 +566,9 @@ pub fn load_score_ingest(root: &Path) -> CoverageScoreIngest {
                     sources_total: 0,
                     sources_present: 0,
                     hard_findings: 0,
-                    soft_findings: 1,
+                    soft_findings: 0,
                 }),
-                findings: vec![CoverageFinding {
-                    rule_id: "HLT-008-FALSE-GREEN-RISK".into(),
-                    severity: "medium".into(),
-                    confidence: 0.76,
-                    source_id: "coverage-evidence".into(),
-                    kind: "jankurai_artifact".into(),
-                    artifact: DEFAULT_JSON_PATH.into(),
-                    path: DEFAULT_CONFIG_PATH.into(),
-                    line: None,
-                    message: "coverage evidence lane is configured but has not been run".into(),
-                    evidence: vec![format!("{DEFAULT_CONFIG_PATH} exists")],
-                    repair: "run `cargo run -p jankurai -- coverage audit . --config agent/coverage-sources.toml --json target/jankurai/coverage/coverage-audit.json --md target/jankurai/coverage/coverage-audit.md`".into(),
-                    owner: "agent".into(),
-                    lane: "coverage-audit".into(),
-                }],
+                findings: vec![],
                 config_present,
                 artifact_malformed: None,
             };

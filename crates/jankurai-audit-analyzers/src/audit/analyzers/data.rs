@@ -1,6 +1,6 @@
 use jankurai_audit_kernel::audit::helpers::*;
 use jankurai_audit_kernel::audit::scan;
-use jankurai_audit_kernel::model::DimensionResult;
+use jankurai_audit_kernel::model::{DimensionResult, FileInfo};
 
 pub fn analyze(ctx: &AuditContext) -> DimensionResult {
     let mut score = 50;
@@ -25,6 +25,16 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
                 "no adopter product DB surface; standards/tooling repo classification is explicit"
                     .into(),
             ],
+            vec![],
+        );
+    }
+    // A repository with product code but no database at all has no data truth to protect:
+    // scoring it at the base (50) failed the floor for missing safety it does not need.
+    if !has_db_surface && !has_database_marker(ctx, &files) {
+        return make_dim(
+            "Data truth and workflow safety",
+            90,
+            vec!["no database surface (no db/ or migrations/, no SQL, no database driver); data-truth checks do not apply".into()],
             vec![],
         );
     }
@@ -98,4 +108,55 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         notes.push("direct DB access leaks out of the data boundary".into());
     }
     make_dim("Data truth and workflow safety", score, evidence, notes)
+}
+
+/// Database drivers and clients whose presence in product code means the repository owns data.
+const DB_DRIVER_MARKERS: &[&str] = &[
+    "sqlx",
+    "diesel",
+    "rusqlite",
+    "tokio_postgres",
+    "tokio-postgres",
+    "postgres::",
+    "sea_orm",
+    "sea-orm",
+    "redb",
+    "sled::",
+    "psycopg",
+    "sqlalchemy",
+    "sqlite3",
+    "asyncpg",
+    "prisma",
+    "knex",
+    "typeorm",
+    "sequelize",
+    "drizzle-orm",
+    "better-sqlite3",
+    "from 'pg'",
+    "from \"pg\"",
+    "require('pg')",
+    "mongodb",
+    "mongoose",
+];
+
+/// Database evidence beyond the top-level `db/`/`migrations/`/SQL surface: SQL or a migrations
+/// directory anywhere in the tree, a declared DB boundary, or a database driver in a dependency
+/// manifest or product code.
+fn has_database_marker(ctx: &AuditContext, files: &[FileInfo]) -> bool {
+    ctx.all_files
+        .iter()
+        .any(|f| f.suffix == ".sql" || f.rel_path.contains("/migrations/"))
+        || boundary_manifest(ctx)
+            .and_then(|manifest| manifest.db)
+            .map(|db| !db.root_paths.is_empty())
+            .unwrap_or(false)
+        || ctx.all_files.iter().any(|f| {
+            matches!(
+                f.name.as_str(),
+                "Cargo.toml" | "package.json" | "pyproject.toml" | "requirements.txt"
+            ) && DB_DRIVER_MARKERS.iter().any(|m| f.text.contains(m))
+        })
+        || files
+            .iter()
+            .any(|f| DB_DRIVER_MARKERS.iter().any(|m| f.text.contains(m)))
 }
