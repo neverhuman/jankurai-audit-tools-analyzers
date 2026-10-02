@@ -4,16 +4,21 @@
 //! Validates that a repository's README and CI match the canonical agent-native
 //! shape described in `agent/JANKURAI_STANDARD.md`:
 //!
-//! - **README (HLT-047)** should link `AGENTS.md` (so agents find the entrypoint),
-//!   state the target stack, carry a status/score badge, and offer a quick-start
-//!   (install / getting-started) section.
+//! - **README (HLT-047)** should state the target stack, carry a status/score
+//!   badge, and offer a quick-start (install / getting-started) section. Agents do
+//!   not need a README link to find `AGENTS.md`: Codex, Cursor, Copilot and Claude
+//!   Code all load it by filename. What hides it is a tool-specific instruction
+//!   file (`CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `GEMINI.md`):
+//!   Claude Code reads `AGENTS.md` only when no `CLAUDE.md` exists, so HLT-047
+//!   flags such a file beside an `AGENTS.md` that does not reference, import or
+//!   symlink it.
 //! - **CI (HLT-048)** should delegate to versioned `ops/ci/*.sh` scripts (CI Local
 //!   Parity), pin every `uses:` action to a full 40-character commit SHA, and run
 //!   a jankurai audit lane.
 //!
 //! Both rules are ADVISORY (registered, not in `fail_on`). Each check only fires
-//! when the relevant artifact exists: a repo with no README never trips HLT-047,
-//! and a repo with no `.github/workflows/*` never trips HLT-048. A repo that
+//! when the relevant artifact exists: a repo with no README never trips the README
+//! checks, a repo with no `AGENTS.md` never trips the entrypoint check, and a repo with no `.github/workflows/*` never trips HLT-048. A repo that
 //! already matches the canonical shape (such as jankurai) yields zero findings
 //! and stays ratchet-ready.
 
@@ -91,22 +96,16 @@ pub fn detect_readme_gaps(ctx: &AuditContext) -> Vec<FindingHit> {
     if !policy.check_readme {
         return vec![];
     }
+    let mut hits = Vec::new();
+    if policy.require_agents_link {
+        hits.extend(detect_shadowed_agents_md(ctx));
+    }
     let Some(readme) = readme_file(ctx) else {
-        return vec![];
+        return hits;
     };
     let text = &readme.text;
     let lower = text.to_ascii_lowercase();
     let path = readme.rel_path.as_str();
-    let mut hits = Vec::new();
-
-    if policy.require_agents_link && !links_agents_md(text) {
-        hits.push(readme_hit(
-            path,
-            "AGENTS.md link",
-            "README does not link `AGENTS.md`, so agents cannot find the repository entrypoint",
-            "add a link to `AGENTS.md` (the agent entrypoint) near the top of the README",
-        ));
-    }
     if policy.require_stack && !states_target_stack(&lower) {
         hits.push(readme_hit(
             path,
@@ -212,8 +211,80 @@ fn ci_hit(path: &str, element: &str, problem: &str, fix: &str) -> FindingHit {
     }
 }
 
-fn links_agents_md(text: &str) -> bool {
+/// Tool-specific instruction files that a coding agent loads in place of the
+/// `AGENTS.md` in the same directory. `.claude/CLAUDE.md` comes before
+/// `CLAUDE.md` so the longer suffix wins.
+const AGENTS_MD_SHADOWS: &[&str] = &[
+    ".claude/CLAUDE.md",
+    "CLAUDE.md",
+    "CLAUDE.local.md",
+    "GEMINI.md",
+];
+
+/// Flags each tool-specific instruction file that sits beside an `AGENTS.md` but
+/// neither references, imports nor symlinks it. Claude Code reads `AGENTS.md`
+/// only when no `CLAUDE.md` / `.claude/CLAUDE.md` / `CLAUDE.local.md` exists, so
+/// such a file silently hides the repository entrypoint from that tool. Repos
+/// without an `AGENTS.md`, or without a shadowing file, yield no findings.
+fn detect_shadowed_agents_md(ctx: &AuditContext) -> Vec<FindingHit> {
+    let mut hits = Vec::new();
+    for file in &ctx.all_files {
+        let Some(dir) = shadowed_dir(&file.rel_path) else {
+            continue;
+        };
+        let agents_rel = if dir.is_empty() {
+            "AGENTS.md".to_string()
+        } else {
+            format!("{dir}/AGENTS.md")
+        };
+        let Some(agents) = ctx.all_files.iter().find(|f| f.rel_path == agents_rel) else {
+            continue;
+        };
+        if references_agents_md(&file.text)
+            || file.text == agents.text
+            || is_symlink_to_agents_md(ctx, &file.rel_path)
+        {
+            continue;
+        }
+        let name = file.rel_path.as_str();
+        hits.push(FindingHit {
+            path: file.rel_path.clone(),
+            line: Some(1),
+            text: format!("`{name}` does not reference `{agents_rel}`"),
+            matched_term: Some("canonical-agents-entrypoint".into()),
+            agent_fix: format!(
+                "add `@AGENTS.md` (an import) to `{name}`, or replace `{name}` with a symlink to `AGENTS.md`"
+            ),
+            problem: format!(
+                "`{name}` is loaded instead of `{agents_rel}` by its coding agent and never points to it, so that agent misses the repository entrypoint"
+            ),
+        });
+    }
+    hits
+}
+
+/// Returns the directory (repo-relative, `""` for the root) whose `AGENTS.md`
+/// the file at `rel` would shadow, if `rel` is a known shadowing file.
+fn shadowed_dir(rel: &str) -> Option<String> {
+    AGENTS_MD_SHADOWS.iter().find_map(|name| {
+        if rel == *name {
+            return Some(String::new());
+        }
+        let dir = rel.strip_suffix(name)?.strip_suffix('/')?;
+        Some(dir.to_string())
+    })
+}
+
+/// A plain mention counts: an `@AGENTS.md` import, a Markdown link, or the
+/// generated adapter's "Read `AGENTS.md` first" all lead the agent there.
+fn references_agents_md(text: &str) -> bool {
     text.contains("AGENTS.md")
+}
+
+fn is_symlink_to_agents_md(ctx: &AuditContext, rel: &str) -> bool {
+    std::fs::read_link(ctx.root.join(rel))
+        .map(|target| target.file_name().is_some_and(|name| name == "AGENTS.md"))
+        .unwrap_or(false)
 }
 
 fn states_target_stack(lower: &str) -> bool {
@@ -359,17 +430,110 @@ mod tests {
     }
 
     #[test]
-    fn readme_missing_agents_link_and_quick_start_fires() {
+    fn readme_without_agents_link_only_misses_quick_start() {
+        // Agents load AGENTS.md by filename, so the README needs no link to it.
         let bare = "# Project\n\
             [![CI](https://img.shields.io/badge/ci-green.svg)](ci)\n\n\
             Built on Rust.\n";
-        let hits = detect_readme_gaps(&ctx_for(vec![file("README.md", bare)]));
-        assert_eq!(hits.len(), 2, "missing AGENTS link + quick-start: {hits:?}");
-        assert!(hits
-            .iter()
-            .all(|h| h.matched_term.as_deref() == Some("canonical-readme")));
-        assert!(hits.iter().any(|h| h.text.contains("AGENTS.md")));
-        assert!(hits.iter().any(|h| h.text.contains("quick-start")));
+        let hits = detect_readme_gaps(&ctx_for(vec![
+            file("README.md", bare),
+            file("AGENTS.md", "# Agents\n"),
+        ]));
+        assert_eq!(hits.len(), 1, "only quick-start is missing: {hits:?}");
+        assert!(hits[0].text.contains("quick-start"));
+        assert_eq!(hits[0].matched_term.as_deref(), Some("canonical-readme"));
+    }
+
+    fn entrypoint_hits(files: Vec<FileInfo>) -> Vec<FindingHit> {
+        detect_readme_gaps(&ctx_for(files))
+            .into_iter()
+            .filter(|h| h.matched_term.as_deref() == Some("canonical-agents-entrypoint"))
+            .collect()
+    }
+
+    #[test]
+    fn claude_md_hiding_agents_md_fires() {
+        let hits = entrypoint_hits(vec![
+            file("AGENTS.md", "# Agents\n"),
+            file("CLAUDE.md", "Use cargo test.\n"),
+            file("README.md", GOOD_README),
+        ]);
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert_eq!(hits[0].path, "CLAUDE.md");
+        assert!(hits[0].agent_fix.contains("@AGENTS.md"));
+    }
+
+    #[test]
+    fn instruction_files_that_point_at_agents_md_pass() {
+        let hits = entrypoint_hits(vec![
+            file("AGENTS.md", "# Agents\n"),
+            file("CLAUDE.md", "Read `AGENTS.md` first.\n"),
+            file("GEMINI.md", "@AGENTS.md\n"),
+            file(".claude/CLAUDE.md", "@../AGENTS.md\n"),
+            file("CLAUDE.local.md", "# Agents\n"),
+        ]);
+        assert!(
+            hits.is_empty(),
+            "references and identical copies pass: {hits:?}"
+        );
+    }
+
+    #[test]
+    fn every_shadowing_file_is_checked_per_directory() {
+        let hits = entrypoint_hits(vec![
+            file("AGENTS.md", "# Agents\n"),
+            file(".claude/CLAUDE.md", "local rules\n"),
+            file("GEMINI.md", "gemini rules\n"),
+            file("crates/x/AGENTS.md", "# X\n"),
+            file("crates/x/CLAUDE.md", "x rules\n"),
+        ]);
+        let mut paths: Vec<_> = hits.iter().map(|h| h.path.as_str()).collect();
+        paths.sort_unstable();
+        assert_eq!(
+            paths,
+            [".claude/CLAUDE.md", "GEMINI.md", "crates/x/CLAUDE.md"]
+        );
+    }
+
+    #[test]
+    fn no_agents_md_or_no_shadow_yields_no_entrypoint_findings() {
+        assert!(entrypoint_hits(vec![file("CLAUDE.md", "rules\n")]).is_empty());
+        assert!(entrypoint_hits(vec![file("AGENTS.md", "# Agents\n")]).is_empty());
+        // A CLAUDE.md in another directory does not hide the root AGENTS.md.
+        assert!(entrypoint_hits(vec![
+            file("AGENTS.md", "# Agents\n"),
+            file("docs/CLAUDE.md", "docs rules\n"),
+        ])
+        .is_empty());
+    }
+
+    #[test]
+    fn entrypoint_check_runs_without_a_readme() {
+        let hits = entrypoint_hits(vec![
+            file("AGENTS.md", "# Agents\n"),
+            file("CLAUDE.md", "rules\n"),
+        ]);
+        assert_eq!(hits.len(), 1, "{hits:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_claude_md_passes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("AGENTS.md"), "# Agents\n").expect("write");
+        std::os::unix::fs::symlink("AGENTS.md", dir.path().join("CLAUDE.md")).expect("symlink");
+        let mut ctx = ctx_for(vec![
+            file("AGENTS.md", "# Agents\n"),
+            // A real walker reads through the link; give it different text so only
+            // the symlink check can pass it.
+            file("CLAUDE.md", "stale text\n"),
+        ]);
+        ctx.root = dir.path().to_path_buf();
+        let hits: Vec<_> = detect_readme_gaps(&ctx)
+            .into_iter()
+            .filter(|h| h.matched_term.as_deref() == Some("canonical-agents-entrypoint"))
+            .collect();
+        assert!(hits.is_empty(), "symlink to AGENTS.md passes: {hits:?}");
     }
 
     #[test]
