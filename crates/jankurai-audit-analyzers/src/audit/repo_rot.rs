@@ -12,8 +12,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const HLT_RULE_ID: &str = "HLT-040-REPO-ROT-BAD-BEHAVIOR";
 
+// Whole backup-ish name parts only (`handler-old`, `main.bak`, `copy-of-x`). The
+// bare word `final` is ordinary domain vocabulary (`final-outcome`, `final_score`),
+// so only the doubled `final-final` / `final_final` form counts below.
 static FAKE_VERSION_SUFFIX_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)(?:^|[_\-.])(old|backup|bak|copy|final)(?:[_\-.]|$)")
+    Regex::new(r"(?i)(?:^|[_\-.])(old|backup|bak|copy)(?:[_\-.]|$)")
         .expect("repo-rot fake version regex is valid")
 });
 
@@ -429,7 +432,9 @@ fn path_rot_hits(file: &FileInfo) -> Vec<LanguageFinding> {
     let fake_versioned_file = contract_basename_version_digits(file_stem).is_some()
         || FAKE_VERSION_SUFFIX_RE.is_match(file_stem)
         || file_stem.contains("copy-of")
-        || file_stem.contains("final-final");
+        || file_stem.contains("copy_of")
+        || file_stem.contains("final-final")
+        || file_stem.contains("final_final");
     if exact_rot_segment || fake_versioned_file {
         out.push(finding(
             HLT_RULE_ID,

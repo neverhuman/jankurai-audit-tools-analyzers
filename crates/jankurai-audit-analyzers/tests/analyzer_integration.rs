@@ -458,6 +458,34 @@ fn repo_rot_still_flags_fake_versioned_source_path() {
         .any(|finding| finding.matched_term == "repo-rot.path.fake-versioned-source"));
 }
 
+/// `final` is domain vocabulary: only whole backup-ish name parts count.
+#[test]
+fn repo_rot_ignores_final_as_a_domain_word() {
+    let context = ctx(vec![
+        code_file("contracts/v1/model-diagnostics/final-outcome.json", "{}\n"),
+        code_file("crates/app/src/final_score.rs", "pub fn score() {}\n"),
+    ]);
+    assert_eq!(repo_rot::summary(&context).hard_findings, 0);
+}
+
+#[test]
+fn repo_rot_flags_backup_name_patterns() {
+    for path in [
+        "crates/app/src/handler-old.rs",
+        "crates/app/src/handler_bak.rs",
+        "crates/app/src/copy-of-handler.rs",
+        "crates/app/src/handler-final-final.rs",
+    ] {
+        let context = ctx(vec![code_file(path, "pub fn handle() {}\n")]);
+        assert!(
+            repo_rot::findings(&context)
+                .iter()
+                .any(|f| f.matched_term == "repo-rot.path.fake-versioned-source"),
+            "{path} must be flagged"
+        );
+    }
+}
+
 #[test]
 fn repo_rot_findings_are_capped_and_deterministic() {
     let context = ctx(vec![code_file(
@@ -484,14 +512,49 @@ fn zyal_summary_ignores_plain_rust_source() {
 }
 
 #[test]
-fn zyal_flags_runbook_envelope_outside_canonical_root() {
+fn zyal_flags_runbook_file_outside_canonical_root() {
     let context = ctx(vec![code_file(
-        "ops/runbooks/radar.txt",
+        "ops/runbooks/radar.zyal",
         "<<<ZYAL 1.0.0:daemon id=radar>>>\nbody: true\n<<<END_ZYAL id=radar>>>\n",
     )]);
     let findings = zyal::findings(&context);
     assert!(
-        !findings.is_empty(),
-        "a ZYAL envelope outside agent/zyal must produce at least one finding"
+        findings
+            .iter()
+            .any(|finding| finding.problem.contains("must live under agent/zyal")),
+        "a .zyal runbook outside agent/zyal must be flagged as misplaced: {findings:?}"
+    );
+}
+
+#[test]
+fn zyal_flags_runbook_in_a_noncanonical_zyal_directory() {
+    let context = ctx(vec![code_file(
+        "ops/zyal/radar.txt",
+        "<<<ZYAL 1.0.0:daemon id=radar>>>\nbody: true\n<<<END_ZYAL id=radar>>>\n",
+    )]);
+    assert!(!zyal::findings(&context).is_empty());
+}
+
+/// An envelope quoted in a chat log, a note or a test fixture is not a runbook:
+/// placement fires only for runbook locations (`.zyal` files, `zyal/` folders).
+#[test]
+fn zyal_ignores_envelopes_quoted_outside_runbook_locations() {
+    let envelope = "<<<ZYAL 1.0.0:daemon id=radar>>>\nbody: true\n<<<END_ZYAL id=radar>>>\n";
+    let mut chat = code_file(
+        "AGENT_CHAT.md",
+        &format!("Agent A: arm this one\n\n{envelope}\nAgent B: armed.\n"),
+    );
+    chat.is_code = false;
+    let context = ctx(vec![
+        chat,
+        code_file("crates/app/src/runbook_parse_test_data.rs", envelope),
+        code_file("crates/app/tests/fixtures/radar.txt", envelope),
+    ]);
+    let findings = zyal::findings(&context);
+    assert!(
+        findings
+            .iter()
+            .all(|finding| !finding.problem.contains("must live under agent/zyal")),
+        "quoted envelopes must not be flagged as misplaced runbooks: {findings:?}"
     );
 }

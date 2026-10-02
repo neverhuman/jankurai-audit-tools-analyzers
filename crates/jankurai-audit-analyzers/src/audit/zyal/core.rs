@@ -57,7 +57,7 @@ fn scan_file(file: &FileInfo) -> Vec<ZyalFinding> {
     }
 
     let placement = placement_issue(file);
-    if file.is_code && placement.is_none() && !is_candidate(file) {
+    if file.is_code && placement.is_none() {
         return Vec::new();
     }
 
@@ -170,7 +170,7 @@ fn placement_issue(file: &FileInfo) -> Option<ZyalFinding> {
             reason: Some("canonical ZYAL placement".into()),
         });
     }
-    if legacy_ext || lower.ends_with(".zyal") || lower.contains("/zyal/") || is_candidate(file) {
+    if legacy_ext || lower.ends_with(".zyal") || lower.contains("/zyal/") {
         let mut evidence = vec![
             format!("path={}", file.rel_path),
             format!("supported_contract_version={SUPPORTED_ZYAL_CONTRACT_VERSION}"),
