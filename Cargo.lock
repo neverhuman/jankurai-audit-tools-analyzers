@@ -522,7 +522,7 @@ dependencies = [
  "anyhow",
  "globset",
  "jankurai-audit-dedup",
- "jankurai-audit-kernel",
+ "jankurai-audit-kernel 0.1.0 (git+https://github.com/neverhuman/jankurai-tools-kernel.git?rev=b4ef74d9d59651375dd5db1d1e9b7d953e447d17)",
  "once_cell",
  "oxc_allocator",
  "oxc_ast",
@@ -551,7 +551,7 @@ source = "git+https://github.com/neverhuman/jankurai-tools-dedup.git?tag=jankura
 dependencies = [
  "anyhow",
  "chrono",
- "jankurai-audit-kernel",
+ "jankurai-audit-kernel 0.1.0 (git+https://github.com/neverhuman/jankurai-tools-kernel.git?tag=jankurai-tools-kernel-v1.7.0-split.1)",
  "once_cell",
  "regex",
  "serde",
@@ -563,6 +563,30 @@ dependencies = [
 name = "jankurai-audit-kernel"
 version = "0.1.0"
 source = "git+https://github.com/neverhuman/jankurai-tools-kernel.git?tag=jankurai-tools-kernel-v1.7.0-split.1#92511486b87518bad58b04caff3e772c9c72906d"
+dependencies = [
+ "aho-corasick",
+ "anyhow",
+ "chrono",
+ "globset",
+ "ignore",
+ "once_cell",
+ "quote",
+ "rayon",
+ "regex",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "syn 2.0.117",
+ "toml",
+ "walkdir",
+]
+
+[[package]]
+name = "jankurai-audit-kernel"
+version = "0.1.0"
+source = "git+https://github.com/neverhuman/jankurai-tools-kernel.git?rev=b4ef74d9d59651375dd5db1d1e9b7d953e447d17#b4ef74d9d59651375dd5db1d1e9b7d953e447d17"
 dependencies = [
  "aho-corasick",
  "anyhow",

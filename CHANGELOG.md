@@ -8,6 +8,28 @@ version string lives in [`VERSION`](VERSION).
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-10-02
+
+### Changed
+
+- Tool adoption credits CI evidence the way governed split.5 does (owner
+  decision X1): a tool whose adopted command appears in CI text (workflows,
+  resolved `.jeryu/ci.toml` lanes, `ops/ci/*.sh`) counts as replaced, and one
+  whose artifacts are also uploaded counts as artifact-verified. The 1.7.1
+  "admitted execution observation" requirement, which pinned replaced and
+  artifact counts to 0 and capped the dimension at 30, is removed together with
+  its route parser.
+- `HLT-047` checks that `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`
+  and `GEMINI.md` beside an `AGENTS.md` reference it, instead of requiring a
+  README link (split.5 109c5f6).
+- `HLT-024` ZYAL placement fires only for runbook locations (`*.zyal` files and
+  `zyal/` folders), as in split.5. An envelope quoted in a chat log, a note or a
+  test fixture is no longer a misplaced runbook.
+- `HLT-040` repo-rot matches whole backup-ish name parts (`-old`, `.bak`,
+  `copy-of`, `final-final`). The bare word `final` (`final-outcome.json`) no
+  longer marks a stale copy.
+- The kernel dependency is pinned to the 1.7.2 kernel revision.
+
 ### Added
 
 - Root `Justfile` command surface with `setup`, `fast`, `check`, `security`, and
