@@ -2,9 +2,6 @@ use jankurai_audit_kernel::audit::helpers::*;
 use jankurai_audit_kernel::model::{DimensionResult, ToolAdoptionItem, ToolAdoptionReadiness};
 use serde_json::json;
 
-mod routing;
-mod shell;
-
 pub fn analyze(ctx: &AuditContext) -> DimensionResult {
     let readiness = status(ctx);
     let mut evidence = vec![if readiness.control_plane_present {
@@ -53,30 +50,37 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
             .missing
             .iter()
             .take(4)
-            .map(|tool| format!("missing admitted execution observation for `{tool}`")),
+            .map(|tool| format!("missing CI evidence for `{tool}`")),
     );
     dim
 }
 
 pub fn status(ctx: &AuditContext) -> ToolAdoptionReadiness {
     let config = load_tool_adoption_config(&ctx.root);
-    let routes = routing::inspect(ctx);
+    let workflow_text = tool_adoption_ci_text(ctx);
     let mut items = Vec::new();
     let mut applicable_count = 0usize;
     let mut configured_count = 0usize;
     let mut ci_evidence_count = 0usize;
+    let mut artifact_verified_count = 0usize;
 
     for entry in TOOL_ADOPTION_CATALOG {
         let mode = config.mode_for(entry.id);
         let applicable = tool_adoption_applicable(entry, ctx, mode);
-        let route = applicable
-            .then(|| routes.matching(entry.ci_command, entry.artifact_paths))
-            .flatten();
-        let ci_command_present = route.is_some();
-        let upload_present = route.as_ref().is_some_and(|(_, upload)| *upload);
+        let ci_command_present =
+            applicable && workflow_text.contains(&entry.ci_command.to_ascii_lowercase());
+        let upload_present = applicable
+            && ci_command_present
+            && workflow_text.contains("upload-artifact")
+            && entry
+                .artifact_paths
+                .iter()
+                .all(|artifact| workflow_text.contains(&artifact.to_ascii_lowercase()));
         let config_entry_present = applicable && config.present && config.has_entry(entry.id);
         let status = if !applicable {
             "not_applicable"
+        } else if ci_command_present && upload_present {
+            "artifact_verified"
         } else if ci_command_present {
             "ci_evidence"
         } else if config_entry_present {
@@ -91,8 +95,11 @@ pub fn status(ctx: &AuditContext) -> ToolAdoptionReadiness {
         if config_entry_present {
             configured_count += 1;
         }
-        if status == "ci_evidence" {
+        if matches!(status, "ci_evidence" | "artifact_verified") {
             ci_evidence_count += 1;
+        }
+        if status == "artifact_verified" {
+            artifact_verified_count += 1;
         }
 
         let mut item_evidence = vec![format!("mode={}", mode.as_str())];
@@ -102,22 +109,18 @@ pub fn status(ctx: &AuditContext) -> ToolAdoptionReadiness {
         } else if applicable {
             missing.push("agent/tool-adoption.toml entry".into());
         }
-        if let Some((location, _)) = route {
-            item_evidence.push(format!("CI_ROUTE_DECLARATION_ONLY: {location}"));
+        if ci_command_present {
+            item_evidence.push("CI command found in workflow".into());
         } else if applicable {
-            missing.push("supported CI route declaration".into());
+            missing.push("CI command evidence".into());
         }
         if upload_present {
             item_evidence.push(format!(
-                "same-job artifact upload declared, not observed: {}",
+                "artifact uploads found: {}",
                 entry.artifact_paths.join(", ")
             ));
         } else if ci_command_present {
-            missing.push("same-job artifact upload declaration".into());
-        }
-        if applicable {
-            item_evidence.push("execution_observation=UNVERIFIED".into());
-            missing.push("admitted execution observation".into());
+            missing.push("artifact upload reference".into());
         }
 
         items.push(ToolAdoptionItem {
@@ -151,24 +154,22 @@ pub fn status(ctx: &AuditContext) -> ToolAdoptionReadiness {
         .collect::<Vec<_>>();
     let ci_evidence_tools = items
         .iter()
-        .filter(|item| item.status == "ci_evidence")
+        .filter(|item| matches!(item.status.as_str(), "ci_evidence" | "artifact_verified"))
         .map(|item| item.id.clone())
         .collect::<Vec<_>>();
-    let missing = items
+    let artifact_verified_tools = items
         .iter()
-        .filter(|item| item.applicable)
+        .filter(|item| item.status == "artifact_verified")
         .map(|item| item.id.clone())
-        .collect();
+        .collect::<Vec<_>>();
 
     ToolAdoptionReadiness {
         control_plane_present: tool_adoption_control_plane_present(ctx),
         applicable_count,
         configured_count,
         ci_evidence_count,
-        // Source declarations are not admitted observations of tool execution.
-        // This analyzer has no generic execution-observation admission API.
-        artifact_verified_count: 0,
-        replaced_count: 0,
+        artifact_verified_count,
+        replaced_count: ci_evidence_count,
         items,
         evidence: json!({
             "config_present": config.present,
@@ -176,25 +177,60 @@ pub fn status(ctx: &AuditContext) -> ToolAdoptionReadiness {
             "applicable_count": applicable_count,
             "configured_count": configured_count,
             "ci_evidence_count": ci_evidence_count,
-            "artifact_verified_count": 0,
+            "artifact_verified_count": artifact_verified_count,
             "applicable_tools": applicable_tools,
             "configured_tools": configured_tools,
             "ci_evidence_tools": ci_evidence_tools,
-            "artifact_verified_tools": [],
-            "execution_observation": "UNVERIFIED",
-            "route_assessment_incomplete": routes.incomplete,
+            "artifact_verified_tools": artifact_verified_tools,
         }),
-        missing,
+        missing: TOOL_ADOPTION_CATALOG
+            .iter()
+            .filter(|entry| {
+                let mode = config.mode_for(entry.id);
+                tool_adoption_applicable(entry, ctx, mode)
+            })
+            .filter(|entry| {
+                let ci_command_present =
+                    workflow_text.contains(&entry.ci_command.to_ascii_lowercase());
+                let upload_present = ci_command_present
+                    && workflow_text.contains("upload-artifact")
+                    && entry
+                        .artifact_paths
+                        .iter()
+                        .all(|artifact| workflow_text.contains(&artifact.to_ascii_lowercase()));
+                !(ci_command_present && upload_present)
+            })
+            .map(|entry| entry.id.to_string())
+            .collect(),
     }
 }
 
 pub fn missing_required_ci_tools(ctx: &AuditContext) -> Vec<String> {
-    status(ctx)
-        .items
-        .into_iter()
-        .filter(|item| item.applicable && item.mode == ToolAdoptionMode::Required.as_str())
-        .map(|item| item.id)
-        .collect()
+    let config = load_tool_adoption_config(&ctx.root);
+    let workflow_text = tool_adoption_ci_text(ctx);
+    let mut missing = Vec::new();
+
+    for entry in TOOL_ADOPTION_CATALOG {
+        let mode = config.mode_for(entry.id);
+        if mode != ToolAdoptionMode::Required {
+            continue;
+        }
+        if !tool_adoption_applicable(entry, ctx, mode) {
+            continue;
+        }
+        let ci_command_present = workflow_text.contains(&entry.ci_command.to_ascii_lowercase());
+        let upload_present = ci_command_present
+            && workflow_text.contains("upload-artifact")
+            && entry
+                .artifact_paths
+                .iter()
+                .all(|artifact| workflow_text.contains(&artifact.to_ascii_lowercase()));
+        if !(ci_command_present && upload_present) {
+            missing.push(entry.id.to_string());
+        }
+    }
+
+    missing
 }
 
 fn applicable_tool_ids(ctx: &AuditContext, config: &ToolAdoptionConfig) -> Vec<String> {
