@@ -8,6 +8,22 @@ version string lives in [`VERSION`](VERSION).
 
 ## [Unreleased]
 
+### Changed
+
+- Three dimension bonuses that looked only at `.github/workflows/` are
+  provider-aware, reading the resolved `.jeryu/ci.toml` lane text through the
+  kernel's `ci_provider` (the declaration alone still earns nothing):
+  - Proof's +8 CI presence also counts a resolved jeryu lane, for the same
+    points as GitHub workflow files.
+  - Speed's +10 CI cache hint also counts real cache use in a resolved lane,
+    from the kernel's one conservative list (`ci_provider::CI_CACHE_MARKERS`);
+    a bare `cache` or a comment does not count.
+  - Security's workflow-linting check (actionlint/zizmor) is not applicable
+    when there are no workflow files to lint: no points, and the
+    complete-posture bonus is computed from the checks that apply. A lint tool
+    in the lane text still earns it.
+- The kernel pin moves to the revision that adds those `ci_provider` helpers.
+
 ### Removed
 
 - GitHub Actions workflows (`.github/workflows/`), the workflow-only job

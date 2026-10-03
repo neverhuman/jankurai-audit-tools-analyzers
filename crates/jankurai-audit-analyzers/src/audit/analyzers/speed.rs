@@ -1,3 +1,4 @@
+use jankurai_audit_kernel::audit::ci_provider;
 use jankurai_audit_kernel::audit::helpers::*;
 use jankurai_audit_kernel::model::DimensionResult;
 
@@ -60,6 +61,9 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         score += 10;
         evidence.push("locked dependency graph present".into());
     }
+    // CI cache hint: GitHub workflow text mentioning a cache (unchanged), or a
+    // resolved jeryu lane whose commands really use one. The jeryu side reads
+    // only the conservative marker list in `ci_provider::CI_CACHE_MARKERS`.
     if ctx
         .all_files
         .iter()
@@ -67,6 +71,15 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
     {
         score += 10;
         evidence.push("CI cache hint found".into());
+    } else {
+        let markers = ci_provider::jeryu_lane_cache_markers(&ctx.all_files);
+        if !markers.is_empty() {
+            score += 10;
+            evidence.push(format!(
+                "CI cache hint found in jeryu lane: {}",
+                markers.join(", ")
+            ));
+        }
     }
     // One-command setup and a deterministic fast lane are the generic signals that let an
     // ordinary well-run repository reach the floor; before, they only avoided a penalty and

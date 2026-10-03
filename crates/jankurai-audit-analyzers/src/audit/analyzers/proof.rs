@@ -1,5 +1,6 @@
 use crate::audit::analyzers;
 use crate::audit::proofbind_artifact;
+use jankurai_audit_kernel::audit::ci_provider;
 use jankurai_audit_kernel::audit::helpers::*;
 use jankurai_audit_kernel::model::DimensionResult;
 
@@ -28,6 +29,10 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         score += 10;
         evidence.push("test runner present in automation surface".into());
     }
+    // CI presence is provider-aware: committed GitHub workflow files, or a
+    // `.jeryu/ci.toml` lane that resolves to real repository content. A
+    // declaration whose lanes resolve to nothing is not CI presence. Both
+    // providers earn the same points so forge-gated repositories are on par.
     if ctx
         .all_files
         .iter()
@@ -35,6 +40,21 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
     {
         score += 8;
         evidence.push("GitHub workflow files present".into());
+    } else {
+        let surface = ci_provider::detect(&ctx.all_files);
+        if surface.has(ci_provider::CiProvider::Jeryu) {
+            score += 8;
+            let lanes = surface
+                .lanes
+                .iter()
+                .map(|lane| lane.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            evidence.push(format!(
+                "jeryu CI lane resolved in {}: {lanes}",
+                ci_provider::JERYU_DECLARATION_PATH
+            ));
+        }
     }
     if ctx
         .all_files

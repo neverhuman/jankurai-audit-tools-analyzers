@@ -1,3 +1,4 @@
+use jankurai_audit_kernel::audit::ci_provider;
 use jankurai_audit_kernel::audit::helpers::*;
 use jankurai_audit_kernel::model::DimensionResult;
 
@@ -43,12 +44,22 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         score += 8;
         evidence.push("provenance/SBOM tooling found".into());
     }
-    if ["actionlint", "zizmor"]
+    // Workflow linting (actionlint, zizmor) lints GitHub Actions workflow files.
+    // It applies only when the repository has workflow files to lint. Without
+    // any (a jeryu-gated repository, or no committed CI) the check is not
+    // applicable: it earns no points and it does not block the complete-posture
+    // bonus below. A lint tool found anywhere in the command or lane text still
+    // earns the points either way.
+    let workflow_lint_found = ["actionlint", "zizmor"]
         .iter()
-        .any(|n| security_text.contains(n))
-    {
+        .any(|n| security_text.contains(n));
+    let workflow_lint_applies = ci_provider::has_github_workflows(&ctx.all_files);
+    if workflow_lint_found {
         score += 8;
         evidence.push("workflow linting tooling found".into());
+    } else if !workflow_lint_applies {
+        evidence
+            .push("no GitHub workflow files to lint; workflow-linting check does not apply".into());
     }
     if has_security_lane(ctx) {
         score += 8;
@@ -153,9 +164,7 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         && ["syft", "grype", "slsa", "sbom", "cosign"]
             .iter()
             .any(|n| security_text.contains(n))
-        && ["actionlint", "zizmor"]
-            .iter()
-            .any(|n| security_text.contains(n))
+        && (workflow_lint_found || !workflow_lint_applies)
     {
         score += 8;
         evidence.push(
