@@ -7,8 +7,6 @@
 Historical score from the committed [baseline report](agent/baselines/main.repo-score.json)
 and [auditor metadata](agent/jankurai-badge.json).
 
-[![CI](https://github.com/neverhuman/jankurai-tools-analyzers/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/neverhuman/jankurai-tools-analyzers/actions/workflows/ci.yml)
-
 Dimension analyzers and scoring suite for the **jankurai** audit standard. This
 repository is one member of the Jankurai split family; read [`SPLIT.md`](SPLIT.md)
 for the family contract and [`AGENTS.md`](AGENTS.md) for agent routing rules.
@@ -30,9 +28,9 @@ bash scripts/ci-local.sh required
 
 The native library does not need Node.js at runtime. The complete quality lane
 also needs the pinned security tools and auditor installed by the owning CI
-setup; see [testing](docs/testing.md) and
-[the workflow](.github/workflows/ci.yml). Local recipes are in the
-[Justfile](Justfile).
+setup; see [testing](docs/testing.md). Local recipes are in the
+[Justfile](Justfile). CI runs on the forge and our own hosts; GitHub is a
+publishing mirror only and runs no workflows.
 
 ## Layout
 

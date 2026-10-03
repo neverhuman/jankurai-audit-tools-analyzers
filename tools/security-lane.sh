@@ -3,7 +3,7 @@
 #
 # Single entry point for the full supply-chain security posture. The same
 # commands run in CI via ops/ci/security.sh (secret + dependency scanning) and,
-# for the release profile, the provenance/SBOM and workflow-hardening tools
+# for the release profile, the provenance/SBOM tools
 # declared in agent/security-policy.toml. Keeping the complete command surface
 # here lets the audit prove the posture without drift.
 set -euo pipefail
@@ -15,10 +15,6 @@ gitleaks detect --source . --no-banner --redact
 echo "[security] dependency vulnerability audit"
 cargo audit
 npm audit --omit=dev || true
-
-echo "[security] workflow hardening lint"
-zizmor .github/workflows || true
-actionlint || true
 
 echo "[security] software bill of materials + provenance"
 syft . -o cyclonedx-json=target/jankurai/security/sbom.json || true

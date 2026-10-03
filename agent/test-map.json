@@ -77,10 +77,6 @@
       "command": "bash scripts/ci-local.sh security",
       "purpose": "verify the canonical security lane wrapper stays runnable"
     },
-    ".github/": {
-      "command": "bash scripts/ci-local.sh required",
-      "purpose": "verify CI workflow entrypoints stay pinned and thin"
-    },
     ".cargo/": {
       "command": "bash scripts/ci-local.sh required",
       "purpose": "verify the offline build configuration stays consistent"

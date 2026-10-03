@@ -9,8 +9,8 @@ that governs every audit override.
 
 Every change routes to the smallest deterministic lane in
 [`agent/proof-lanes.toml`](../agent/proof-lanes.toml). The lanes are exposed both
-locally (the root [`Justfile`](../Justfile)) and in CI
-([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) through the shared
+locally (the root [`Justfile`](../Justfile)) and in forge CI on our own hosts
+through the shared
 `ops/ci/<lane>.sh` scripts, so a green local run means a green CI run.
 
 | Lane | Command | Purpose |

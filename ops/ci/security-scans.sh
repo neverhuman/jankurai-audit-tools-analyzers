@@ -13,8 +13,6 @@ scan() {
   return "$result"
 }
 scan gitleaks gitleaks detect --source . --no-banner --redact
-scan zizmor zizmor --no-progress .github/workflows
-scan actionlint actionlint .github/workflows/*.yml
 if [[ -f Cargo.toml ]]; then
   scan cargo-audit cargo audit
   scan cargo-deny cargo deny check advisories bans sources

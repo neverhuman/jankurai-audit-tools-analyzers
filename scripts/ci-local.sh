@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Local entry point for the CI lanes. Delegates to the exact same
-# ops/ci/<lane>.sh scripts the GitHub Actions workflow calls, so local runs
+# ops/ci/<lane>.sh scripts forge CI calls, so local runs
 # never drift from CI.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
