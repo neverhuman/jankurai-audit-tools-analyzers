@@ -10,6 +10,13 @@ version string lives in [`VERSION`](VERSION).
 
 ### Changed
 
+- The `required` lane now builds, lints and tests the workspace instead of only
+  resolving `cargo metadata`: it runs locked/offline metadata,
+  `cargo fmt --all --check`, `cargo clippy --workspace --all-targets` with
+  `-D warnings` and `cargo nextest run --workspace`, mirroring
+  jankurai-core's required lane. A compile or test failure can no longer pass
+  the push gate. The lane stays offline after `cargo fetch --locked`.
+
 - Three dimension bonuses that looked only at `.github/workflows/` are
   provider-aware, reading the resolved `.jeryu/ci.toml` lane text through the
   kernel's `ci_provider` (the declaration alone still earns nothing):

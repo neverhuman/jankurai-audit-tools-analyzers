@@ -4,11 +4,11 @@
 [[lane]]
 name = "required"
 command = "bash scripts/ci-local.sh required"
-purpose = "the lightweight gate that must pass on every push (cargo metadata resolves)"
+purpose = "the gate that must pass on every push: locked metadata, format, lint and workspace tests, offline"
 command_id = "lane.required"
 kind = "validation"
-cost = 3
-rules_covered = ["HLT-003-OWNERLESS-PATH", "HLT-004-UNMAPPED-PROOF"]
+cost = 8
+rules_covered = ["HLT-003-OWNERLESS-PATH", "HLT-004-UNMAPPED-PROOF", "HLT-008-FALSE-GREEN-RISK"]
 required_artifacts = []
 timeout_seconds = 600
 requires_network = false

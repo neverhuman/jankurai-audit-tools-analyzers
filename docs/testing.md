@@ -15,7 +15,7 @@ through the shared
 
 | Lane | Command | Purpose |
 | --- | --- | --- |
-| `required` | `bash scripts/ci-local.sh required` | manifest resolves against the locked graph |
+| `required` | `bash scripts/ci-local.sh required` | locked metadata + `cargo fmt --all --check` + `cargo clippy --workspace --all-targets` + `cargo nextest run --workspace`, all offline |
 | `fast` | `just fast` | `cargo check --workspace --locked` + `cargo nextest run --workspace` |
 | `security` | `just security` | `gitleaks detect` + `cargo audit` |
 | `audit` | `just audit` | `jankurai audit` writes `.jankurai/repo-score.{json,md}` |
