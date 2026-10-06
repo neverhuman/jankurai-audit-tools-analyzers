@@ -41,8 +41,10 @@ fn truncated_malformed_and_contradictory_records_cannot_be_complete_coverage() {
         "SF:src/a.rs\nDA:1,1\nBRDA:1,0,0,bad\nend_of_record\n",
         "BRDA:1,0,0,1\nSF:src/a.rs\nDA:1,1\nend_of_record\n",
         "SF:src/a.rs\nDA:1,1\nBRDA:1,0,0,1\nBRDA:1,0,0,0\nend_of_record\n",
-        "SF:src/a.rs\nDA:1,1\nLF:2\nend_of_record\n",
-        "SF:src/a.rs\nDA:1,0\nLH:1\nend_of_record\n",
+        "SF:src/a.rs\nDA:1,1\nDA:2,1\nLF:1\nend_of_record\n",
+        "SF:src/a.rs\nDA:1,1\nLH:0\nend_of_record\n",
+        "SF:src/a.rs\nDA:1,1\nLF:2\nLH:3\nend_of_record\n",
+        "SF:src/a.rs\nLF:3\nLH:1\nend_of_record\nSF:src/b.rs\nDA:1,1\nend_of_record\n",
         "SF:src/a.rs\nDA:1,1\nBRF:1\nend_of_record\n",
         "SF:src/a.rs\nDA:1,1\nLF:1\nLF:1\nend_of_record\n",
         "SF:src/a.rs\nDA:1,1\nDAX:2,0\nend_of_record\n",
@@ -131,4 +133,24 @@ fn automatic_source_discovery_cannot_silently_disable_symlinked_inputs() {
     })
     .unwrap_err();
     assert!(error.to_string().contains("applicable source is a symlink"));
+}
+
+// cargo-llvm-cov 0.8.7 (LLVM line summary) declares LF/LH above the DA records
+// it emits: this sample has 31 DA lines (30 hit) under LF:32 and LH:31.
+#[test]
+fn cargo_llvm_cov_lcov_with_lf_above_da_records_is_complete() {
+    let source = include_str!("fixtures/lcov/cargo-llvm-cov-0.8.7.lcov");
+    let report = parse(source).expect("cargo-llvm-cov 0.8.7 LCOV parses");
+    assert_eq!(report.total_lines, 31);
+    assert_eq!(report.covered_lines, 30);
+}
+
+#[test]
+fn declared_totals_above_captured_records_are_accepted() {
+    for source in [
+        "SF:src/a.rs\nDA:1,1\nLF:2\nend_of_record\n",
+        "SF:src/a.rs\nDA:1,0\nLH:1\nLF:2\nend_of_record\n",
+    ] {
+        assert!(parse(source).is_ok(), "{source}");
+    }
 }

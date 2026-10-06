@@ -127,12 +127,29 @@ impl Record {
     }
 
     fn validate_totals(&self) -> Result<()> {
+        let lines = self.file.lines.len();
+        let hit_lines = self.file.lines.values().filter(|count| **count > 0).count();
+        // LF/LH count instrumented lines, and LLVM (cargo-llvm-cov) derives them
+        // from its line summary, which can name lines that carry no DA record.
+        // So a declared total may exceed the captured DA records, but never fall
+        // below them, and a record that declares lines but captured none is cut.
+        let declared_lines = self.totals.get("LF").copied();
+        let declared_hits = self.totals.get("LH").copied();
+        if declared_lines.is_some_and(|declared| declared < lines) {
+            bail!("incomplete LCOV: LF is below the captured DA records");
+        }
+        if declared_lines.is_some_and(|declared| declared > 0) && lines == 0 {
+            bail!("incomplete LCOV: LF declares lines but no DA records were captured");
+        }
+        if declared_hits.is_some_and(|declared| declared < hit_lines) {
+            bail!("incomplete LCOV: LH is below the captured hit DA records");
+        }
+        if let (Some(found), Some(hit)) = (declared_lines, declared_hits) {
+            if hit > found {
+                bail!("invalid LCOV line summary: LH exceeds LF");
+            }
+        }
         for (kind, actual) in [
-            ("LF", self.file.lines.len()),
-            (
-                "LH",
-                self.file.lines.values().filter(|count| **count > 0).count(),
-            ),
             ("BRF", self.branches.len()),
             (
                 "BRH",

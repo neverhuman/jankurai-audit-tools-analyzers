@@ -10,6 +10,15 @@ version string lives in [`VERSION`](VERSION).
 
 ## [1.7.3] - 2026-10-06
 
+### Fixed
+
+- The coverage audit accepts complete LCOV from cargo-llvm-cov 0.8.7. LLVM
+  derives `LF`/`LH` from its line summary, which can name instrumented lines
+  that carry no `DA` record, so a declared total may now exceed the captured
+  records. It still may not fall below them, `LH` may not exceed `LF`, a record
+  that declares lines but captured no `DA` is rejected as cut off, and a missing
+  `end_of_record` still fails. Branch totals stay exact.
+
 ### Changed
 
 - Pins the 1.7.3 kernel (`33b3893`), whose public auditor identity is `1.7.3`.
