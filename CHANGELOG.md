@@ -8,8 +8,13 @@ version string lives in [`VERSION`](VERSION).
 
 ## [Unreleased]
 
+## [1.7.3] - 2026-10-06
+
 ### Changed
 
+- Pins the 1.7.3 kernel (`33b3893`), whose public auditor identity is `1.7.3`.
+  `agent/standard-version.toml` declares `auditor_version = "1.7.3"`, the
+  family auditor pin.
 - The `required` lane now builds, lints and tests the workspace instead of only
   resolving `cargo metadata`: it runs locked/offline metadata,
   `cargo fmt --all --check`, `cargo clippy --workspace --all-targets` with
