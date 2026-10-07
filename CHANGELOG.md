@@ -21,7 +21,8 @@ version string lives in [`VERSION`](VERSION).
 
 ### Changed
 
-- Pins the 1.7.3 kernel (`33b3893`), whose public auditor identity is `1.7.3`.
+- Pins the 1.7.3 kernel (`e66b94c`), whose public auditor identity is `1.7.3`
+  and whose HLT-022 authz scan matches terms on identifier boundaries.
   `agent/standard-version.toml` declares `auditor_version = "1.7.3"`, the
   family auditor pin.
 - The `required` lane now builds, lints and tests the workspace instead of only
