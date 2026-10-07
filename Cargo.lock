@@ -522,7 +522,7 @@ dependencies = [
  "anyhow",
  "globset",
  "jankurai-audit-dedup",
- "jankurai-audit-kernel 0.1.0 (git+https://github.com/neverhuman/jankurai-tools-kernel.git?rev=cffceeef3a2e10b9de5e593533a64f5223d21edb)",
+ "jankurai-audit-kernel 0.1.0 (git+https://github.com/neverhuman/jankurai-tools-kernel.git?rev=3051b412d86cd340d90408e5527ede2bf977abca)",
  "once_cell",
  "oxc_allocator",
  "oxc_ast",
@@ -586,7 +586,7 @@ dependencies = [
 [[package]]
 name = "jankurai-audit-kernel"
 version = "0.1.0"
-source = "git+https://github.com/neverhuman/jankurai-tools-kernel.git?rev=cffceeef3a2e10b9de5e593533a64f5223d21edb#cffceeef3a2e10b9de5e593533a64f5223d21edb"
+source = "git+https://github.com/neverhuman/jankurai-tools-kernel.git?rev=3051b412d86cd340d90408e5527ede2bf977abca#3051b412d86cd340d90408e5527ede2bf977abca"
 dependencies = [
  "aho-corasick",
  "anyhow",

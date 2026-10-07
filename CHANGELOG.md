@@ -21,7 +21,7 @@ version string lives in [`VERSION`](VERSION).
 
 ### Changed
 
-- Pins the 1.7.3 kernel (`cffceee`), whose public auditor identity is `1.7.3`.
+- Pins the 1.7.3 kernel (`3051b41`), whose public auditor identity is `1.7.3`.
   Its HLT-022 authz scan matches terms and clearing proof on identifier
   boundaries, and its shared `jankurai:allow` helper now enforces `expires=`:
   an expired or malformed date no longer suppresses the web-security and
