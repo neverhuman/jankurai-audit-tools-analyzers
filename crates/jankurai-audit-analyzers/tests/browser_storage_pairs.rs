@@ -219,7 +219,7 @@ fn incomplete_or_unsupported_lexical_forms_do_not_erase_known_positives() {
 
 #[test]
 fn existing_nearby_allow_semantics_are_preserved() {
-    let allow = "// jankurai:allow websec.storage.token reason=reviewed fixture owner=web expires=2027-03-08";
+    let allow = "// jankurai:allow websec.storage.token reason=reviewed fixture owner=web expires=2099-12-31";
     assert_pair(
         &format!("{allow}\nsessionStorage.setItem('token', token);"),
         false,

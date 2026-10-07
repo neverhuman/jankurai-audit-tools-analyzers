@@ -21,8 +21,11 @@ version string lives in [`VERSION`](VERSION).
 
 ### Changed
 
-- Pins the 1.7.3 kernel (`e66b94c`), whose public auditor identity is `1.7.3`
-  and whose HLT-022 authz scan matches terms on identifier boundaries.
+- Pins the 1.7.3 kernel (`cffceee`), whose public auditor identity is `1.7.3`.
+  Its HLT-022 authz scan matches terms and clearing proof on identifier
+  boundaries, and its shared `jankurai:allow` helper now enforces `expires=`:
+  an expired or malformed date no longer suppresses the web-security and
+  repo-rot detectors here.
   `agent/standard-version.toml` declares `auditor_version = "1.7.3"`, the
   family auditor pin.
 - The `required` lane now builds, lints and tests the workspace instead of only
