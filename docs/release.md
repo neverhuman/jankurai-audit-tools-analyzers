@@ -16,16 +16,19 @@ the repository root. The crate version in
 
 ## Changelog
 
-Every release records its user-visible changes in
-[`CHANGELOG.md`](../CHANGELOG.md) under a heading that matches the new `VERSION`.
-The `Unreleased` section is promoted to a dated version heading at tag time.
+Every release generates its user-visible notes from the commits since the
+previous release, using commit subjects and `Todo:` trailers. Those notes are
+recorded in [`CHANGELOG.md`](../CHANGELOG.md) under a heading that matches the
+new `VERSION`. The `Unreleased` section is promoted to a dated version heading
+at tag time.
 
 ## Release automation
 
 Releases are cut by CI, not by hand:
 
 1. Bump [`VERSION`](../VERSION) and promote the `Unreleased` section of
-   [`CHANGELOG.md`](../CHANGELOG.md).
+   [`CHANGELOG.md`](../CHANGELOG.md), generating its notes from the commits
+   since the previous release.
 2. Run the full local gate: `just check` (format, lint, fast lane, security,
    self-audit).
 3. Push the version commit. Forge CI on our own hosts runs the build,
@@ -83,7 +86,8 @@ If a release regresses:
 3. Restore from backup if data or state changed, using the tested restore
    procedure.
 4. Open a revert commit that restores the previous `VERSION` and `CHANGELOG.md`
-   state, and add a `### Fixed` entry describing the rollback.
+   state. The rollback release notes are generated from the revert commit
+   subject and `Todo:` trailer.
 5. Re-run `just check` to confirm the rolled-back tree is green before
    re-publishing.
 
