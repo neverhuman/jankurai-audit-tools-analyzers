@@ -8,6 +8,17 @@ version string lives in [`VERSION`](VERSION).
 
 ## [Unreleased]
 
+## [1.7.4] - 2026-10-14
+
+### Changed
+
+- Pins the 1.7.4 kernel (`bc13c32`), whose public auditor identity is `1.7.4`.
+  It adds reviewed `[[dead_language_allow]]` records for HLT-001 and an opt-in
+  docs-only `helpers::tool_adoption_applicability`; this crate does not call the
+  new helper, so tool-adoption applicability here is unchanged.
+  `agent/standard-version.toml` declares `auditor_version = "1.7.4"`, the
+  family auditor pin.
+
 ## [1.7.3] - 2026-10-06
 
 ### Fixed
