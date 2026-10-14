@@ -13,7 +13,7 @@ categories = ["development-tools"]
 anyhow = "1.0"
 globset = "0.4"
 jankurai-audit-dedup = { git = "https://github.com/neverhuman/jankurai-tools-dedup.git", tag = "jankurai-tools-dedup-v1.7.0-split.2", package = "jankurai-audit-dedup", version = "0.1.0" }
-jankurai-audit-kernel = { git = "https://github.com/neverhuman/jankurai-tools-kernel.git", rev = "bc13c32452eb31a4a9630ea2ea22c1ecdb8457f9", package = "jankurai-audit-kernel", version = "0.1.0" }
+jankurai-audit-kernel = { git = "https://github.com/neverhuman/jankurai-tools-kernel.git", rev = "0291fc30e2ae3cad598f0106341be2557ee907b4", package = "jankurai-audit-kernel", version = "0.1.0" }
 once_cell = "1.21"
 oxc_allocator = "=0.149.0"
 oxc_ast = "=0.149.0"

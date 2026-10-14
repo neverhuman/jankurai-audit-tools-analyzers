@@ -8,6 +8,14 @@ version string lives in [`VERSION`](VERSION).
 
 ## [Unreleased]
 
+## [1.7.5] - 2026-10-14
+
+### Changed
+
+- Pins the 1.7.5 kernel (`0291fc3`), whose public auditor identity is `1.7.5`;
+  the kernel's code is unchanged from 1.7.4. `agent/standard-version.toml`
+  declares `auditor_version = "1.7.5"`, the family auditor pin.
+
 ## [1.7.4] - 2026-10-14
 
 ### Changed
