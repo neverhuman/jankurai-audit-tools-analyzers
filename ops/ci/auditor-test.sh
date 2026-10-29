@@ -39,7 +39,8 @@ want="$(sed -n 's/^auditor_version = "\([^"]*\)"$/\1/p' agent/standard-version.t
 export TEST_VERSION='jankurai 0.0.0'
 reject
 grep -F "auditor version mismatch: want $want got 0.0.0" output
-if [[ -f "$root/ops/ci/check-bootstrap.sh" ]]; then
+# Every fast lane that resolves the auditor must refuse an ambient one too.
+if grep -qx require_auditor "$root/ops/ci/fast.sh"; then
   cp "$root/ops/ci/fast.sh" ops/ci/
   reject fast
   grep -F "auditor version mismatch: want $want got 0.0.0" output
