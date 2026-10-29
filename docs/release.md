@@ -19,16 +19,47 @@ the repository root. The crate version in
 Every release generates its user-visible notes from the commits since the
 previous release, using commit subjects and `Todo:` trailers. Those notes are
 recorded in [`CHANGELOG.md`](../CHANGELOG.md) under a heading that matches the
-new `VERSION`. The `Unreleased` section is promoted to a dated version heading
-at tag time.
+new `VERSION`. Ordinary changes leave `Unreleased` empty. At release time,
+run the following from the repository root with Python 3 and Git installed,
+substituting the previous immutable tag, candidate commit, and release date:
+
+```sh
+python3 scripts/release-notes.py --since <previous-tag> --until <candidate-sha> --version "$(cat VERSION)" --date YYYY-MM-DD --changelog CHANGELOG.md > release-notes.generated.md
+```
+
+The command writes a complete candidate changelog to stdout; it never modifies
+its input. Inspect `release-notes.generated.md`, then, only after the command
+succeeds, replace `CHANGELOG.md` with that file in the release commit. Never
+redirect output directly to `CHANGELOG.md`. A failed run leaves the source
+untouched; rerunning with identical inputs produces identical output. Delete a
+failed output before retrying. An already recorded version is rejected.
+
+The range excludes the previous release and includes the candidate. Both refs
+are resolved to commits and the previous release must be an ancestor. All
+reachable commits in the range are included in topological order, oldest first,
+including merges and reverts. Each entry preserves its subject, full commit ID,
+and every Git `Todo:` trailer. No keyword filtering hides rollback subjects.
+An empty range, invalid date, duplicate version, or nonempty `Unreleased` fails.
+Omit `--changelog` to generate only the dated section for an external release.
+Keep the resolved input SHAs with the release evidence.
+
+Verify the procedure with `python3 scripts/release-notes-test.py` (also run by the
+required gate). It builds a real fixture commit range containing a change and
+its rollback and checks the populated dated section, Todo trailers, retained
+history, deterministic reruns, and rejected invalid inputs.
+
+For sibling documentation policy PRs when they land, adopt this same script,
+fixture test, required-gate invocation, and release/rollback procedure together;
+substitute the sibling's version source and immutable tag pattern. Do not adopt
+the no-per-change-notes policy without its executable generation procedure.
 
 ## Release automation
 
 Releases are cut by CI, not by hand:
 
-1. Bump [`VERSION`](../VERSION) and promote the `Unreleased` section of
-   [`CHANGELOG.md`](../CHANGELOG.md), generating its notes from the commits
-   since the previous release.
+1. Bump [`VERSION`](../VERSION), select the candidate SHA, and generate
+   [`CHANGELOG.md`](../CHANGELOG.md) using the command above. Preserve the empty
+   `Unreleased` heading and all earlier dated sections.
 2. Run the full local gate: `just check` (format, lint, fast lane, security,
    self-audit).
 3. Push the version commit. Forge CI on our own hosts runs the build,
@@ -85,9 +116,12 @@ If a release regresses:
 2. Re-point consumers at that immutable tag; tags are never moved or deleted.
 3. Restore from backup if data or state changed, using the tested restore
    procedure.
-4. Open a revert commit that restores the previous `VERSION` and `CHANGELOG.md`
-   state. The rollback release notes are generated from the revert commit
-   subject and `Todo:` trailer.
+4. Open a revert commit for the regressing code. Preserve the existing changelog
+   history; do not restore an older `CHANGELOG.md`. Give the commit an explicit
+   rollback/revert subject identifying the affected release and a `Todo:` trailer.
+   If publishing a corrective release, choose a new version and generate notes
+   from the regressed release tag through the revert commit with the command
+   above. This retains an explicit rollback record without per-change edits.
 5. Re-run `just check` to confirm the rolled-back tree is green before
    re-publishing.
 

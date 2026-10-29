@@ -14,6 +14,9 @@ bash ops/ci/auditor-test.sh
 log "required lane: ci-local lane contract"
 bash scripts/ci-local-lanes-test.sh
 
+log "required lane: release notes fixture"
+python3 scripts/release-notes-test.py
+
 log "required lane: locked metadata, format, lint, and workspace tests"
 cargo metadata --locked --offline --no-deps --format-version 1 >/dev/null
 cargo fmt --all --check
