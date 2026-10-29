@@ -65,3 +65,7 @@ audit:
 # Print the declared version.
 versions:
     cat VERSION
+
+# Full existing required proof, also used by the hosted gate runner.
+required:
+    bash scripts/ci-local.sh required
