@@ -38,3 +38,30 @@ assert_artifact() {
   fi
   log "artifact present: $artifact"
 }
+
+# Resolve once so the audit and its receipt describe the same executable.
+require_auditor() {
+  local want got version digest receipt
+  receipt="$REPO_ROOT/target/jankurai/auditor.txt"
+  mkdir -p "${receipt%/*}"
+  rm -f -- "$receipt"
+  want="$(sed -n 's/^[[:space:]]*auditor_version[[:space:]]*=[[:space:]]*"\([^"]*\)"[[:space:]]*\(#.*\)\{0,1\}$/\1/p' "$REPO_ROOT/agent/standard-version.toml")"
+  if [[ -z "$want" || "$want" == *$'\n'* ]]; then
+    printf '[ci] missing or invalid auditor_version pin\n' >&2
+    return 1
+  fi
+  if ! JANKURAI_BIN="$(type -P jankurai)"; then
+    printf '[ci] missing required tool: jankurai\n' >&2
+    return 1
+  fi
+  # Absolute paths keep relative PATH entries stable if a caller changes cwd.
+  JANKURAI_BIN="$(cd "$(dirname "$JANKURAI_BIN")" && pwd)/$(basename "$JANKURAI_BIN")"
+  version="$("$JANKURAI_BIN" --version)" || return 1
+  got="${version#jankurai }"
+  if [[ "$version" != "jankurai $want" ]]; then
+    printf '[ci] auditor version mismatch: want %s got %s\n' "$want" "$got" >&2
+    return 1
+  fi
+  digest="$(sha256sum -- "$JANKURAI_BIN")" || return 1
+  printf 'version: %s\nsha256: %s\n' "$version" "${digest%% *}" > "$receipt"
+}

@@ -4,10 +4,11 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$REPO_ROOT"
+require_auditor
 
 mkdir -p .jankurai
 log "audit lane: jankurai audit -> .jankurai/repo-score.{json,md}"
-jankurai audit . --no-score-history --json .jankurai/repo-score.json --md .jankurai/repo-score.md --full
+"$JANKURAI_BIN" audit . --no-score-history --json .jankurai/repo-score.json --md .jankurai/repo-score.md --full
 
 assert_artifact .jankurai/repo-score.json
 assert_artifact .jankurai/repo-score.md
@@ -17,7 +18,7 @@ if [[ -f agent/badge.toml && -f agent/jankurai-badge.svg ]]; then
   grep -q 'jankurai-badge:start' README.md
   test -s agent/jankurai-badge.svg
   test -s agent/jankurai-badge.json
-  jankurai badge --check \
+  "$JANKURAI_BIN" badge --check \
     --score agent/baselines/main.repo-score.json \
     --out agent/jankurai-badge.svg \
     --json-out agent/jankurai-badge.json \
