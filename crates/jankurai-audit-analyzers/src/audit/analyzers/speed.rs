@@ -20,6 +20,7 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         "dotnet test",
         "pnpm",
         "bun test",
+        "node --test",
         "turbo",
         "nx",
         "tsc -p",
@@ -40,6 +41,7 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         "dotnet test",
         "tsc -p",
         "playwright test",
+        "--test-name-pattern",
     ]
     .iter()
     .any(|n| surface_text.contains(n))
@@ -125,6 +127,8 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
     ]
     .iter()
     .any(|m| surface_text.contains(m));
+    // A test runner told to bound its own parallelism is the same kind of evidence.
+    let has_bounded_runner = surface_text.contains("--test-concurrency");
     let has_narrow_target = [
         "cargo check -p",
         "cargo test -p",
@@ -132,12 +136,16 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         "vitest run",
         "pytest -k",
         "go test -run",
+        "--test-name-pattern",
     ]
     .iter()
     .any(|m| surface_text.contains(m));
     if has_cache_marker && has_narrow_target {
         score += 10;
         evidence.push("explicit cache marker plus narrow per-package target found".into());
+    } else if has_bounded_runner && has_narrow_target {
+        score += 10;
+        evidence.push("bounded test concurrency plus narrow named-test target found".into());
     }
     make_dim("Build speed signals", score, evidence, notes)
 }

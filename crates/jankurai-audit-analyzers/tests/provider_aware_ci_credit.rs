@@ -189,3 +189,43 @@ fn security_workflow_lint_is_not_applicable_without_workflows() {
     ]);
     assert!(evidence(&security::analyze(&linted)).contains(LINT));
 }
+
+const NODE_PACKAGE: &str = "{\"scripts\": {\"test\": \"node --test --test-concurrency=4\"}}";
+
+fn speed_score(extra: &[(&str, &str)]) -> (u32, String) {
+    let (_root, ctx) = repo(extra);
+    let dim = speed::analyze(&ctx);
+    (dim.score as u32, evidence(&dim))
+}
+
+#[test]
+fn speed_credits_bounded_node_test_and_named_target() {
+    let (base, _) = speed_score(&[]);
+    let (score, ev) = speed_score(&[
+        ("package.json", NODE_PACKAGE),
+        (
+            "Justfile",
+            "test-name pattern:\n    node --test --test-name-pattern={{pattern}}\n",
+        ),
+    ]);
+    assert!(score >= base + 30, "{score} vs {base}: {ev}");
+    assert!(
+        ev.contains("bounded test concurrency plus narrow named-test target"),
+        "{ev}"
+    );
+}
+
+#[test]
+fn speed_ignores_absent_or_commented_node_test_commands() {
+    let (base, _) = speed_score(&[]);
+    let (score, ev) = speed_score(&[
+        ("package.json", "{\"scripts\": {\"build\": \"tsc\"}}"),
+        (
+            "Justfile",
+            "# node --test --test-concurrency=4 --test-name-pattern=x\nbuild:\n    echo hi\n",
+        ),
+    ]);
+    assert_eq!(score, base, "{ev}");
+    assert!(!ev.contains("bounded test concurrency"), "{ev}");
+    assert!(!ev.contains("build acceleration"), "{ev}");
+}
