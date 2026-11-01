@@ -560,12 +560,34 @@ fn zyal_ignores_envelopes_quoted_outside_runbook_locations() {
 }
 
 #[test]
-fn operational_python_does_not_claim_product_truth() {
+fn python_containment_keeps_operational_and_db_paths_in_scope() {
     use jankurai_audit_analyzers::audit::analyzers::python;
-    let tooling = code_file("scripts/notes-test.py", "import subprocess\n");
-    let result = python::analyze(&ctx(vec![tooling.clone()]));
-    assert_eq!(result.score, 100);
-    let product = code_file("src/service.py", "value = 1\n");
-    let result = python::analyze(&ctx(vec![tooling, product]));
-    assert!(result.score < 85);
+    for self_audit in [false, true] {
+        for path in [
+            "scripts/notes-test.py",
+            "ops/check.py",
+            "tools/check.py",
+            "db/reconcile.py",
+            "migrations/0002_backfill.py",
+            "contracts/update.py",
+            "src/spec/service.py",
+            "src/service.py",
+        ] {
+            let mut context = ctx(vec![code_file(path, "import psycopg\nimport sqlalchemy\n")]);
+            context.self_audit = self_audit;
+            let result = python::analyze(&context);
+            assert!(result.score < 85, "{path}, self={self_audit}: {result:?}");
+            assert!(result
+                .evidence
+                .iter()
+                .any(|e| e.contains("outside the allowed roots")));
+        }
+        let mut context = ctx(vec![code_file("db/sqlalchemy.py", "import sqlalchemy\n")]);
+        context.self_audit = self_audit;
+        let result = python::analyze(&context);
+        assert!(result
+            .evidence
+            .iter()
+            .any(|e| e.contains("directly touches DB truth")));
+    }
 }

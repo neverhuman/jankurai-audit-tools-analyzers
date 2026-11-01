@@ -48,7 +48,79 @@ fn type_matches(expected: &str, value: &Value) -> bool {
     }
 }
 
+// Refuse unsupported forms even in absent optional properties and empty arrays.
+// This is deliberately a small contract validator, not a general JSON Schema engine.
+fn check_schema(schema: &Value, at: &str, errors: &mut Vec<String>) {
+    let Some(object) = schema.as_object() else {
+        errors.push(format!("{at}: non-object schema is not supported"));
+        return;
+    };
+    for (key, value) in object {
+        let valid = match key.as_str() {
+            "type" => {
+                let valid_type = |v: &Value| {
+                    v.as_str().is_some_and(|s| {
+                        matches!(
+                            s,
+                            "object"
+                                | "array"
+                                | "string"
+                                | "boolean"
+                                | "null"
+                                | "number"
+                                | "integer"
+                        )
+                    })
+                };
+                valid_type(value)
+                    || value
+                        .as_array()
+                        .is_some_and(|a| !a.is_empty() && a.iter().all(valid_type))
+            }
+            "required" => value
+                .as_array()
+                .is_some_and(|a| a.iter().all(Value::is_string)),
+            "enum" => value.as_array().is_some_and(|a| !a.is_empty()),
+            "additionalProperties" => value.is_boolean(),
+            "minimum" | "maximum" => value.is_number(),
+            "pattern" => value.as_str().is_some_and(|p| regex::Regex::new(p).is_ok()),
+            "$ref" => {
+                value.is_string()
+                    && object
+                        .keys()
+                        .all(|k| k == "$ref" || ANNOTATIONS.contains(&k.as_str()))
+            }
+            "properties" | "$defs" => {
+                if let Some(children) = value.as_object() {
+                    for (name, child) in children {
+                        check_schema(child, &format!("{at}.{key}.{name}"), errors);
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+            "items" => {
+                check_schema(value, &format!("{at}.items"), errors);
+                true
+            }
+            "const" => true,
+            k if ANNOTATIONS.contains(&k) => true,
+            _ => false,
+        };
+        if !valid {
+            errors.push(format!(
+                "{at}: unsupported schema constraint `{key}`: {value}"
+            ));
+        }
+    }
+}
+
 fn validate(schema: &Value, value: &Value, at: &str, schemas: &Schemas, errors: &mut Vec<String>) {
+    check_schema(schema, at, errors);
+    if !errors.is_empty() {
+        return;
+    }
     let Some(schema) = schema.as_object() else {
         // `true`/`false` schemas are not used by these contracts.
         errors.push(format!("{at}: non-object schema is not supported"));
@@ -216,28 +288,14 @@ fn errors_for(report: &Value) -> Vec<String> {
 #[test]
 fn published_repo_score_reports_match_the_committed_schema() {
     let root = repo_root();
-    let mut checked = vec![];
     for relative in [
         "agent/baselines/main.repo-score.json",
-        ".jankurai/repo-score.json",
+        "crates/jankurai-audit-analyzers/tests/fixtures/audit-1.7.6/repo-score.json",
     ] {
-        let path = root.join(relative);
-        if !path.exists() {
-            // The fresh lane artifact only exists after `ci-local.sh audit`.
-            continue;
-        }
-        let report = read_json(&path);
+        let report = read_json(&root.join(relative));
         assert_eq!(errors_for(&report), Vec::<String>::new(), "{relative}");
-        assert_eq!(
-            report["schema_url"], "schemas/repo-score.schema.json",
-            "{relative} must name the committed contract"
-        );
-        checked.push(relative);
+        assert_eq!(report["schema_url"], "schemas/repo-score.schema.json");
     }
-    assert!(
-        checked.contains(&"agent/baselines/main.repo-score.json"),
-        "the committed ratchet baseline must be validated"
-    );
 }
 
 /// The repair queue is the artifact that routes a finding to the next agent,
@@ -247,7 +305,6 @@ fn repair_queue_records_carry_the_fields_an_agent_reruns_from() {
     let schemas = schemas();
     let report = read_json(&repo_root().join("agent/baselines/main.repo-score.json"));
     let queue = report["agent_fix_queue"].as_array().expect("queue array");
-    assert!(!queue.is_empty(), "the baseline must carry repair routing");
     for (index, record) in queue.iter().enumerate() {
         let mut errors = vec![];
         validate(
@@ -277,6 +334,10 @@ fn the_schema_rejects_corrupted_reports() {
         ("wrong scalar type", |r| r["score"] = Value::from("94")),
         ("out-of-range score", |r| r["score"] = Value::from(140)),
         ("unknown severity", |r| {
+            let fixture = read_json(&repo_root().join(
+                "crates/jankurai-audit-analyzers/tests/fixtures/audit-1.7.6/repo-score.json",
+            ));
+            r["findings"] = fixture["findings"].clone();
             r["findings"][0]["severity"] = Value::from("nagging")
         }),
         ("non-sha256 fingerprint", |r| {
@@ -306,6 +367,15 @@ fn the_validator_fails_closed_on_constraints_it_cannot_check() {
         serde_json::json!({ "$ref": "missing.schema.json" }),
         serde_json::json!({ "$ref": "#/$defs/absent" }),
         serde_json::json!(true),
+        serde_json::json!({ "additionalProperties": { "type": "string" } }),
+        serde_json::json!({ "required": "score" }),
+        serde_json::json!({ "required": [1] }),
+        serde_json::json!({ "enum": "score" }),
+        serde_json::json!({ "type": ["object", 1] }),
+        serde_json::json!({ "minimum": "0" }),
+        serde_json::json!({ "$ref": "#/$defs/sha256", "const": "ignored" }),
+        serde_json::json!({ "properties": { "absent": { "required": "ignored" } } }),
+        serde_json::json!({ "items": { "enum": "ignored" } }),
     ] {
         let mut errors = vec![];
         validate(
@@ -329,4 +399,30 @@ fn the_validator_fails_closed_on_constraints_it_cannot_check() {
         &mut errors,
     );
     assert_eq!(errors.len(), 1, "closed objects must reject stray fields");
+}
+
+#[test]
+fn real_176_repair_queue_matches_the_report_and_contract() {
+    let root = repo_root().join("crates/jankurai-audit-analyzers/tests/fixtures/audit-1.7.6");
+    let report = read_json(&root.join("repo-score.json"));
+    assert_eq!(report["auditor_version"], "1.7.6");
+    let records: Vec<Value> = fs::read_to_string(root.join("repair-queue.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(!records.is_empty());
+    assert_eq!(Value::Array(records.clone()), report["agent_fix_queue"]);
+    let schemas = schemas();
+    for record in records {
+        let mut errors = vec![];
+        validate(
+            schemas.resolve("repair-queue.schema.json").unwrap(),
+            &record,
+            "queue",
+            &schemas,
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+    }
 }

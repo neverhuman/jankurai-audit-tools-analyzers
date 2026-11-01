@@ -19,7 +19,7 @@ audit_status=0
 assert_artifact .jankurai/repo-score.json
 assert_artifact .jankurai/repo-score.md
 assert_artifact target/jankurai/repair-queue.jsonl
-log "audit lane: evidence schemas are proved by the required lane (cargo nextest run -E 'binary(evidence_schema_contract)')"
+log "audit lane: evidence schemas are checked against committed real-auditor fixtures by the required lane (cargo nextest run -E 'binary(evidence_schema_contract)')"
 if [ "$audit_status" -ne 0 ]; then
   printf '[ci] audit reported findings (exit %s); report and repair queue retained\n' "$audit_status" >&2
   exit "$audit_status"

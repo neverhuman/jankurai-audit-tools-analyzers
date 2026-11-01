@@ -148,8 +148,7 @@ runs
 cargo nextest run --workspace --locked --offline -E 'binary(evidence_schema_contract)'
 ```
 
-which validates the committed baseline — and the freshly written
-`.jankurai/repo-score.json` whenever the audit lane has produced one — against
+which validates the committed baseline and the committed 1.7.6 fixture against
 the schemas, checks every inline `agent_fix_queue` record against the
 repair-queue contract, proves the schemas reject corrupted reports, and fails
 closed on any schema keyword its validator does not implement.
@@ -181,50 +180,35 @@ repeated render. It neither contacts production nor writes release notes here.
 Dependency fetching is a separate setup step (`cargo fetch --locked`); the required
 Rust checks use the offline locked graph.
 
-### Release-tooling classification regression
+### Python classification and reproduction limits
 
-Reproduction on 2026-11-01 with governed Jankurai 1.7.6 (SHA-256
-`63b445f21ca375ebd9515df49d0095aff6823b731121102651caf4e57cef1cf9`), each head
-extracted with `git archive <sha> | tar -x -C target/proof/<head>` and audited
-with `jankurai audit target/proof/<head> --no-score-history --full`:
+Python in `scripts/`, `ops/`, `tools/`, `db/`, `migrations/` and `contracts/`
+continues through the Python-containment checks, including on self-audits. A
+runtime-stack classifier is not evidence that Python cannot own durable data.
+Non-product exceptions must use the declared boundary mechanism and its review
+process; this change grants no directory exemption and changes no score floor.
+`python_containment_keeps_operational_and_db_paths_in_scope` covers these paths
+with database imports, plus the existing DB-truth deduction.
 
-| Head | Score | Cap | Findings |
-| --- | --- | --- | --- |
-| `f900a81` (accepted `main`) | 72, raw 91 | `python-direct-product-truth-or-db-ownership` | HLT-047 (`README.md`), HLT-017 and HLT-026 (`docs/testing.md`), two HLT-005 (`python/`, `python/ai-service`), HLT-002 (`agent/generated-zones.toml`) |
-| `49856cb` (pull request 14 head) | 72, raw 91 | same | same |
+The historical dependency head `49856cb` was not reproduced by this repair.
+No score comparison or clean-proof claim for that head is made here. The
+committed ratchet baseline is an older auditor artifact, not a measurement of
+this revision under 1.7.6; validating its shape does not refresh that baseline.
 
-The two heads score identically and carry the same findings, and
-`git diff --stat f900a81 49856cb` is limited to `Cargo.lock`,
-`crates/jankurai-audit-analyzers/Cargo.toml` and `SPLIT.md`: every finding
-reported against the dependency pull request is inherited from accepted `main`,
-so none of them is evidence against that change. The pull request head is no
-longer published as `refs/pull/14/head`; it was recovered from
-`refs/queue-meta/main/14`, which records `pr_head_sha` and the dequeue reason
-naming `49856cb9a32963e44773d4b070c9407785ed7a38`, and then fetched by SHA. The
-forge check-run API was not readable from this lane
-(`GET /api/v1/repos/root/jankurai-tools-analyzers/pulls/14` → HTTP 401
-`login required`), so the git refs above are the live snapshot of record.
-HLT-002 appears only in these extracted snapshots, whose `problem` is
-"generated zone file `target/` is missing": `target/` is the repository's single
-generated zone and an archive export has none. It does not reproduce in a real
-checkout and is an artifact of the reproduction method, not of either head.
+### Verified 1.7.6 lane invocation
 
-Release-note tooling was being scored as Python product truth. Both source
-fixes classify it with the existing runtime-surface rule:
-`operational_python_does_not_claim_product_truth` (analyzers) and
-`operational_python_is_not_product_truth_but_remains_scannable` (kernel) each
-failed before the change and pass after it, while the kernel fixture still
-requires security findings for unsafe calls in operational scripts and keeps
-product-path findings. No policy floor, exclusion, ignore or dependency pin was
-changed for these tests.
+On 2026-11-01, `PATH=/usr/local/libexec/jain:$PATH bash ops/ci/audit.sh` ran
+with the pinned real auditor (SHA-256
+`63b445f21ca375ebd9515df49d0095aff6823b731121102651caf4e57cef1cf9`).
+It accepted `--repair-queue-jsonl` and wrote the JSON report, Markdown report
+and JSONL queue. The lane exited **1**, with score 72, raw 92, and two HLT-005
+findings. This is evidence of artifact/CLI compatibility, not a passing audit
+or a reproduction of historical PR14. The unchanged 1.7.6 binary does not run
+the source changes in this PR.
 
-HLT-047, HLT-026 and HLT-017 are cleared in this checkout: a full 1.7.6 audit of
-the branch head scores 72 raw 92 with `Observability and repair evidence` at 100
-and only the two HLT-005 findings left. HLT-017 did not close on documentation
-alone — the dimension's documentation credit was already earned at 81 — it
-closed by publishing the report-attestation and repair-queue contracts described
-above and enforcing them in the required lane. The HLT-005 cap remains until the
-owning release process re-cuts and installs a governed build containing the two
-source fixes; the analyzers crate also still pins the kernel at rev `0291fc3`,
-so the kernel fix reaches this crate only when that pin is bumped by the release
-process. Neither step belongs to the dependency pull request.
+The exact report, queue and binary receipt are retained in
+`crates/jankurai-audit-analyzers/tests/fixtures/audit-1.7.6/`. The required lane
+validates these committed artifacts and the older baseline deterministically;
+it does not opportunistically read ignored working-tree reports. The schema
+validator implements the forms used here and rejects other forms (including
+schema-valued `additionalProperties` and `$ref` with constraint siblings).

@@ -1,0 +1,2 @@
+version: jankurai 1.7.6
+sha256: 63b445f21ca375ebd9515df49d0095aff6823b731121102651caf4e57cef1cf9
