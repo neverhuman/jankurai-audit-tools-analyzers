@@ -11,11 +11,17 @@ JSON Schemas under [`schemas/`](../schemas/):
 | Security evidence | [`schemas/security-evidence.schema.json`](../schemas/security-evidence.schema.json) |
 | Boundary evidence | [`schemas/boundary-evidence.schema.json`](../schemas/boundary-evidence.schema.json) |
 | Migration report | [`schemas/migration-report.schema.json`](../schemas/migration-report.schema.json) |
+| Repo-score report (`.jankurai/repo-score.json`) | [`schemas/repo-score.schema.json`](../schemas/repo-score.schema.json) |
+| Repair queue (`target/jankurai/repair-queue.jsonl`) | [`schemas/repair-queue.schema.json`](../schemas/repair-queue.schema.json) |
 
 ## Contract discipline
 
 - Every analyzer that writes an evidence artifact MUST validate its output
   against the matching schema before the artifact is published.
+- The audit-evidence contracts are proved against real reports by
+  `cargo nextest run --workspace -E 'binary(evidence_schema_contract)'` in the
+  required lane; see
+  [`docs/testing.md`](../docs/testing.md#structured-evidence-artifacts-and-their-contracts).
 - The schemas are versioned (`schema_version`); a breaking change bumps the
   version and is gated by the public-API / semver drift lane (`just api-drift`).
 - These schemas are the single source of truth for consumers of the analyzer

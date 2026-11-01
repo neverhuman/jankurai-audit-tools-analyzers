@@ -20,6 +20,20 @@ printf '%s\n' "$*" >> calls
 mkdir -p .jankurai
 printf '{}\n' > .jankurai/repo-score.json
 printf 'score\n' > .jankurai/repo-score.md
+# Mirror the real auditor: write the repair queue to the path the lane asks
+# for. TEST_SKIP_QUEUE=1 plays an auditor that promises the queue and does not
+# write it, so the lane's artifact assertion stays load-bearing.
+queue=''
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == --repair-queue-jsonl ]]; then
+    queue="${2:-}"
+  fi
+  shift
+done
+if [[ -n "$queue" && "${TEST_SKIP_QUEUE:-0}" != 1 ]]; then
+  mkdir -p "$(dirname "$queue")"
+  printf '{"path":"README.md","priority":"medium","task":"t","why":"w"}\n' > "$queue"
+fi
 exit "${TEST_AUDIT_EXIT:-0}"
 SH
 chmod +x "$fixture/bin/jankurai"
@@ -48,6 +62,19 @@ fi
 export TEST_VERSION="jankurai $want"
 bash scripts/ci-local.sh audit
 grep -F 'audit .' calls
+grep -F -- '--repair-queue-jsonl target/jankurai/repair-queue.jsonl' calls
+test -s target/jankurai/repair-queue.jsonl
+# A missing repair queue is a missing promise, not a pass.
+rm calls target/jankurai/repair-queue.jsonl
+export TEST_SKIP_QUEUE=1
+if bash scripts/ci-local.sh audit > output 2>&1; then
+  echo 'missing repair queue was accepted' >&2
+  exit 1
+fi
+grep -F 'expected artifact missing: target/jankurai/repair-queue.jsonl' output
+unset TEST_SKIP_QUEUE
+rm calls
+bash scripts/ci-local.sh audit
 grep -Fx "version: jankurai $want" target/jankurai/auditor.txt
 digest="$(sha256sum bin/jankurai)"
 grep -Fx "sha256: ${digest%% *}" target/jankurai/auditor.txt

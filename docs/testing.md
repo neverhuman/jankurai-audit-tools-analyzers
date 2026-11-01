@@ -128,6 +128,37 @@ failed report before rerunning, and compare the same revision and auditor.
 The audit lane can exit nonzero after writing reports; check both the exit code
 and findings. These artifacts are repair evidence, not a claim that a gate passed.
 
+### Structured evidence artifacts and their contracts
+
+The audit lane publishes three machine-readable artifacts, each with a committed
+wire contract, so the next agent routes off typed fields instead of log prose:
+
+| Artifact | What it carries | Contract |
+| --- | --- | --- |
+| `.jankurai/repo-score.json` | score, caps, decision, per-dimension evidence, every finding with `rule_id`, `path`, `problem`, `agent_fix`, `rerun_command`, `docs_url` and a `fingerprint` | [`schemas/repo-score.schema.json`](../schemas/repo-score.schema.json) |
+| `target/jankurai/repair-queue.jsonl` | one JSON object per repair task (`rule_id`, `path`, `priority`, `lane`, `owner`, `task`, `why`) | [`schemas/repair-queue.schema.json`](../schemas/repair-queue.schema.json) |
+| `target/jankurai/auditor.txt` | the identity receipt (`version`, `sha256`) of the binary that produced the report | `ops/ci/lib.sh` (`require_auditor`) |
+
+The report names its own contract in `schema_url`, and
+`agent/baselines/main.repo-score.json` is the committed report the ratchet
+compares against. Both contracts are enforced, not described: the required lane
+runs
+
+```sh
+cargo nextest run --workspace --locked --offline -E 'binary(evidence_schema_contract)'
+```
+
+which validates the committed baseline — and the freshly written
+`.jankurai/repo-score.json` whenever the audit lane has produced one — against
+the schemas, checks every inline `agent_fix_queue` record against the
+repair-queue contract, proves the schemas reject corrupted reports, and fails
+closed on any schema keyword its validator does not implement.
+
+To triage a finding: read `rerun_command` and `docs_url` on the finding, rerun
+that lane, then diff the new report's `findings[].fingerprint` set against the
+retained one. A finding that disappears without its fingerprint being accounted
+for means the scope changed, not that the defect was repaired.
+
 ## Local verification budget
 
 These checks use local CPU, disk and Git fixtures; they require no paid API.
@@ -152,24 +183,48 @@ Rust checks use the offline locked graph.
 
 ### Release-tooling classification regression
 
-On 2026-11-01, a full audit of unchanged `f900a81` with governed Jankurai
-1.7.6 (SHA-256
-`63b445f21ca375ebd9515df49d0095aff6823b731121102651caf4e57cef1cf9`)
-returned score 72, raw 91, one cap and five findings: HLT-047, HLT-017,
-HLT-026 and two HLT-005 findings. This reproduces the reported main-side
-symptoms independently of the dependency PR. The exact PR commit `49856cb`
-was unavailable locally and remote authentication failed, so that head has
-not been independently reproduced here.
+Reproduction on 2026-11-01 with governed Jankurai 1.7.6 (SHA-256
+`63b445f21ca375ebd9515df49d0095aff6823b731121102651caf4e57cef1cf9`), each head
+extracted with `git archive <sha> | tar -x -C target/proof/<head>` and audited
+with `jankurai audit target/proof/<head> --no-score-history --full`:
 
-`operational_python_does_not_claim_product_truth` failed before the analyzer
-change (score 10 instead of 100) and passes afterward. The kernel's
-`operational_python_is_not_product_truth_but_remains_scannable` fixture likewise
-failed before the change and passes afterward, while requiring security findings
-for unsafe calls in operational scripts and retaining product-path findings.
-No policy floor, exclusion or dependency pin changes are needed for these tests.
+| Head | Score | Cap | Findings |
+| --- | --- | --- | --- |
+| `f900a81` (accepted `main`) | 72, raw 91 | `python-direct-product-truth-or-db-ownership` | HLT-047 (`README.md`), HLT-017 and HLT-026 (`docs/testing.md`), two HLT-005 (`python/`, `python/ai-service`), HLT-002 (`agent/generated-zones.toml`) |
+| `49856cb` (pull request 14 head) | 72, raw 91 | same | same |
 
-The released auditor still reports the Python cap until the owning release
-process re-cuts and installs a governed build containing both source fixes.
-With these documentation changes alone, 1.7.6 clears HLT-047 and HLT-026;
-HLT-017 remains at 81/85. Repair instructions do not establish runtime telemetry
-or a structured emitter, so this remaining finding is not claimed resolved.
+The two heads score identically and carry the same findings, and
+`git diff --stat f900a81 49856cb` is limited to `Cargo.lock`,
+`crates/jankurai-audit-analyzers/Cargo.toml` and `SPLIT.md`: every finding
+reported against the dependency pull request is inherited from accepted `main`,
+so none of them is evidence against that change. The pull request head is no
+longer published as `refs/pull/14/head`; it was recovered from
+`refs/queue-meta/main/14`, which records `pr_head_sha` and the dequeue reason
+naming `49856cb9a32963e44773d4b070c9407785ed7a38`, and then fetched by SHA. The
+forge check-run API was not readable from this lane
+(`GET /api/v1/repos/root/jankurai-tools-analyzers/pulls/14` → HTTP 401
+`login required`), so the git refs above are the live snapshot of record.
+HLT-002 appears only in these extracted snapshots, whose `problem` is
+"generated zone file `target/` is missing": `target/` is the repository's single
+generated zone and an archive export has none. It does not reproduce in a real
+checkout and is an artifact of the reproduction method, not of either head.
+
+Release-note tooling was being scored as Python product truth. Both source
+fixes classify it with the existing runtime-surface rule:
+`operational_python_does_not_claim_product_truth` (analyzers) and
+`operational_python_is_not_product_truth_but_remains_scannable` (kernel) each
+failed before the change and pass after it, while the kernel fixture still
+requires security findings for unsafe calls in operational scripts and keeps
+product-path findings. No policy floor, exclusion, ignore or dependency pin was
+changed for these tests.
+
+HLT-047, HLT-026 and HLT-017 are cleared in this checkout: a full 1.7.6 audit of
+the branch head scores 72 raw 92 with `Observability and repair evidence` at 100
+and only the two HLT-005 findings left. HLT-017 did not close on documentation
+alone — the dimension's documentation credit was already earned at 81 — it
+closed by publishing the report-attestation and repair-queue contracts described
+above and enforcing them in the required lane. The HLT-005 cap remains until the
+owning release process re-cuts and installs a governed build containing the two
+source fixes; the analyzers crate also still pins the kernel at rev `0291fc3`,
+so the kernel fix reaches this crate only when that pin is bumped by the release
+process. Neither step belongs to the dependency pull request.

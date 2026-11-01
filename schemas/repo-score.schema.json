@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jankurai.dev/schemas/repo-score.schema.json",
+  "title": "jankurai repo score report",
+  "description": "Attestation contract for the report `jankurai audit` writes as .jankurai/repo-score.json in this repository's audit lane; the report names this file in its own `schema_url`. Unknown properties are allowed so a newer auditor stays readable, but the fields agents and the ratchet route off are required.",
+  "type": "object",
+  "required": [
+    "report_fingerprint",
+    "input_fingerprint",
+    "policy_fingerprint",
+    "dirty_worktree",
+    "generated_at",
+    "schema_url",
+    "standard",
+    "standard_version",
+    "auditor_version",
+    "schema_version",
+    "repo",
+    "scope",
+    "score",
+    "raw_score",
+    "decision",
+    "git",
+    "policy",
+    "caps_applied",
+    "dimensions",
+    "findings",
+    "agent_fix_queue"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "report_fingerprint": { "$ref": "#/$defs/sha256" },
+    "input_fingerprint": { "$ref": "#/$defs/sha256" },
+    "policy_fingerprint": { "$ref": "#/$defs/sha256" },
+    "dirty_worktree": { "type": "boolean" },
+    "generated_at": { "type": "string" },
+    "schema_url": { "const": "schemas/repo-score.schema.json" },
+    "standard": { "const": "jankurai" },
+    "standard_version": { "type": "string" },
+    "auditor_version": { "type": "string" },
+    "schema_version": { "type": "string" },
+    "repo": { "type": "string" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "raw_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "decision": { "$ref": "#/$defs/decision" },
+    "git": { "$ref": "#/$defs/git" },
+    "policy": { "$ref": "#/$defs/policy" },
+    "caps_applied": { "type": "array", "items": { "type": "string" } },
+    "dimensions": { "type": "array", "items": { "$ref": "#/$defs/dimension" } },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "agent_fix_queue": {
+      "type": "array",
+      "items": { "$ref": "repair-queue.schema.json" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "scope": {
+      "type": "object",
+      "required": ["mode", "paths"],
+      "additionalProperties": true,
+      "properties": {
+        "mode": { "type": "string" },
+        "paths": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": ["status", "minimum_score", "passed", "hard_findings", "soft_findings"],
+      "additionalProperties": true,
+      "properties": {
+        "status": { "type": "string", "enum": ["pass", "fail"] },
+        "minimum_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "passed": { "type": "boolean" },
+        "hard_findings": { "type": "integer", "minimum": 0 },
+        "soft_findings": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "git": {
+      "type": "object",
+      "required": ["head", "base", "changed_files", "mode", "dirty_worktree"],
+      "additionalProperties": true,
+      "properties": {
+        "head": { "type": ["string", "null"] },
+        "base": { "type": ["string", "null"] },
+        "changed_files": { "type": "integer", "minimum": 0 },
+        "mode": { "type": "string" },
+        "dirty_worktree": { "type": ["boolean", "null"] }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["path", "minimum_score", "fail_on", "advisory_on"],
+      "additionalProperties": true,
+      "properties": {
+        "path": { "type": "string" },
+        "minimum_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "fail_on": { "type": "array", "items": { "type": "string" } },
+        "advisory_on": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "dimension": {
+      "type": "object",
+      "required": ["name", "weight", "score", "weighted_points", "evidence", "notes"],
+      "additionalProperties": true,
+      "properties": {
+        "name": { "type": "string" },
+        "weight": { "type": "integer", "minimum": 0 },
+        "score": { "type": "integer" },
+        "weighted_points": { "type": "number" },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": [
+        "rule_id",
+        "severity",
+        "hardness",
+        "category",
+        "lane",
+        "owner",
+        "path",
+        "problem",
+        "agent_fix",
+        "evidence",
+        "evidence_kind",
+        "rerun_command",
+        "docs_url",
+        "check_id",
+        "fingerprint",
+        "confidence",
+        "tlr"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "rule_id": { "type": "string" },
+        "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info"] },
+        "hardness": { "type": "string", "enum": ["hard", "soft"] },
+        "category": { "type": "string" },
+        "lane": { "type": "string" },
+        "owner": { "type": "string" },
+        "path": { "type": "string" },
+        "problem": { "type": "string" },
+        "agent_fix": { "type": "string" },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "evidence_kind": { "type": "string" },
+        "rerun_command": { "type": "string" },
+        "docs_url": { "type": "string" },
+        "check_id": { "type": "string" },
+        "fingerprint": { "$ref": "#/$defs/sha256" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "tlr": { "type": "string" }
+      }
+    }
+  }
+}

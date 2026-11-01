@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jankurai.dev/schemas/repair-queue.schema.json",
+  "title": "jankurai repair queue item",
+  "description": "One repair task emitted by `jankurai audit --repair-queue-jsonl` (one JSON object per line) and inlined in the repo-score report as `agent_fix_queue`. Each record routes one finding to the next agent with the narrowest path and a typed task.",
+  "type": "object",
+  "required": ["path", "priority", "task", "why"],
+  "properties": {
+    "path": { "type": "string" },
+    "priority": { "type": "string" },
+    "rule_id": { "type": "string" },
+    "tlr": { "type": "string" },
+    "lane": { "type": "string" },
+    "owner": { "type": "string" },
+    "task": { "type": "string" },
+    "why": { "type": "string" }
+  }
+}
