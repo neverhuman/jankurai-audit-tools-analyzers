@@ -11,13 +11,13 @@ Dimension analyzers and scoring suite for the **jankurai** audit standard. This
 repository is one member of the Jankurai split family; read [`SPLIT.md`](SPLIT.md)
 for the family contract and [`AGENTS.md`](AGENTS.md) for agent routing rules.
 
-## Contributor setup
+## Quick start for contributors
 
 This repository supplies native language, web-security and repository-health detectors to
 [Jankurai](https://github.com/neverhuman/jankurai). For binary installation,
 your first audit, and the complete family build, start at the hub.
 
-Install Rust **1.97.1**, a native compiler/linker and Node.js **24** for CI
+Install Rust **1.97.1**, a native compiler/linker and Python **3** for release-note fixture tests, and Node.js **24** for CI
 control tests. Then run the crate's contributor checks:
 
 ```sh

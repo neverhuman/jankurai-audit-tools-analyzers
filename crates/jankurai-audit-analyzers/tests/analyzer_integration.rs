@@ -558,3 +558,14 @@ fn zyal_ignores_envelopes_quoted_outside_runbook_locations() {
         "quoted envelopes must not be flagged as misplaced runbooks: {findings:?}"
     );
 }
+
+#[test]
+fn operational_python_does_not_claim_product_truth() {
+    use jankurai_audit_analyzers::audit::analyzers::python;
+    let tooling = code_file("scripts/notes-test.py", "import subprocess\n");
+    let result = python::analyze(&ctx(vec![tooling.clone()]));
+    assert_eq!(result.score, 100);
+    let product = code_file("src/service.py", "value = 1\n");
+    let result = python::analyze(&ctx(vec![tooling, product]));
+    assert!(result.score < 85);
+}

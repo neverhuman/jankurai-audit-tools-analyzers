@@ -25,13 +25,13 @@ through the shared
 The analyzer crate carries three layers of Rust proof:
 
 - **Unit tests** live next to the analyzers under
-  `crates/jankurai/src/audit/**` behind `#[cfg(test)]`, exercising
+  `crates/jankurai-audit-analyzers/src/audit/**` behind `#[cfg(test)]`, exercising
   each detector against tempfile fixtures.
 - **Integration tests** live under
-  `crates/jankurai/tests/` and drive the public analyzer API
+  `crates/jankurai-audit-analyzers/tests/` and drive the public analyzer API
   (`repo_rot`, `zyal`) end-to-end through a constructed `AuditContext`.
 - **Property tests** live under
-  `crates/jankurai/tests/` and use `proptest` to assert detector
+  `crates/jankurai-audit-analyzers/tests/` and use `proptest` to assert detector
   invariants over randomized inputs (clean source never flags; the detector
   vocabulary is matched deterministically).
 
@@ -111,3 +111,65 @@ exception record carries these fields so an agent can act on it without guessing
 
 The full exception lifecycle is documented in
 [`docs/exceptions.md`](exceptions.md).
+
+## Repair evidence and reruns
+
+Keep the command, exit status, commit (`git rev-parse HEAD`), and tool versions
+beside the failing output. The required lane prints `[ci]` phase labels; nextest
+names each failed test. Rerun a reported test with
+`cargo nextest run --workspace --locked --offline -E 'test(TEST_NAME)'`, replacing
+`TEST_NAME` with the reported name. A narrow pass does not replace the required lane.
+
+For structured audit diagnostics, run `bash scripts/ci-local.sh audit` with the
+pinned auditor on PATH. It writes `.jankurai/repo-score.json` and
+`.jankurai/repo-score.md`; `target/jankurai/auditor.txt` records its version and
+SHA-256. Findings carry rule IDs, paths, evidence and repair routes. Preserve the
+failed report before rerunning, and compare the same revision and auditor.
+The audit lane can exit nonzero after writing reports; check both the exit code
+and findings. These artifacts are repair evidence, not a claim that a gate passed.
+
+## Local verification budget
+
+These checks use local CPU, disk and Git fixtures; they require no paid API.
+The spend cap for this procedure is zero and the paid-request quota is zero.
+Use one required-lane process per checkout. A reproducible 15-minute wall-clock
+budget and explicit stop condition can be applied with GNU `timeout`:
+
+```sh
+mkdir -p target/verification
+bash -c 'set -o pipefail; timeout --signal=TERM --kill-after=10s 15m bash scripts/ci-local.sh required 2>&1 | tee target/verification/required.log'
+python3 scripts/release-notes-test.py
+```
+
+The timeout is the kill switch: expiry terminates the lane, and status 124 is
+incomplete proof, never a pass. On expiry or failure, retain the log, inspect the
+last phase and fix the cause before a deliberate rerun; do not retry indefinitely.
+The release-note fixture exercises the real CLI against a temporary Git repository
+under `target/`, including release and rollback records, invalid input and a
+repeated render. It neither contacts production nor writes release notes here.
+Dependency fetching is a separate setup step (`cargo fetch --locked`); the required
+Rust checks use the offline locked graph.
+
+### Release-tooling classification regression
+
+On 2026-11-01, a full audit of unchanged `f900a81` with governed Jankurai
+1.7.6 (SHA-256
+`63b445f21ca375ebd9515df49d0095aff6823b731121102651caf4e57cef1cf9`)
+returned score 72, raw 91, one cap and five findings: HLT-047, HLT-017,
+HLT-026 and two HLT-005 findings. This reproduces the reported main-side
+symptoms independently of the dependency PR. The exact PR commit `49856cb`
+was unavailable locally and remote authentication failed, so that head has
+not been independently reproduced here.
+
+`operational_python_does_not_claim_product_truth` failed before the analyzer
+change (score 10 instead of 100) and passes afterward. The kernel's
+`operational_python_is_not_product_truth_but_remains_scannable` fixture likewise
+failed before the change and passes afterward, while requiring security findings
+for unsafe calls in operational scripts and retaining product-path findings.
+No policy floor, exclusion or dependency pin changes are needed for these tests.
+
+The released auditor still reports the Python cap until the owning release
+process re-cuts and installs a governed build containing both source fixes.
+With these documentation changes alone, 1.7.6 clears HLT-047 and HLT-026;
+HLT-017 remains at 81/85. Repair instructions do not establish runtime telemetry
+or a structured emitter, so this remaining finding is not claimed resolved.

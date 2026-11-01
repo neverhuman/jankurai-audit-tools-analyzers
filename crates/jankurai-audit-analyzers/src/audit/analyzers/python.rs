@@ -7,6 +7,7 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         .iter()
         .filter(|f| {
             f.suffix == ".py"
+                && is_runtime_stack_surface(f, ctx.self_audit)
                 && !f.rel_path.contains("/tests/fixtures/")
                 && !f.rel_path.starts_with("tests/fixtures/")
                 && !python_scoring_exempt(ctx, &f.rel_path)
@@ -16,7 +17,7 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
     let non_optimal = non_optimal_language_hits(ctx);
     if python_files.is_empty() {
         let mut score = 100;
-        let mut evidence = vec!["no Python files in scope".into()];
+        let mut evidence = vec!["no Python product runtime files in scope".into()];
         let mut notes = vec![];
         if !non_optimal.is_empty() {
             score -= 10;
