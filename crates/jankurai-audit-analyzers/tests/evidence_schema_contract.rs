@@ -117,8 +117,9 @@ fn check_schema(schema: &Value, at: &str, errors: &mut Vec<String>) {
 }
 
 fn validate(schema: &Value, value: &Value, at: &str, schemas: &Schemas, errors: &mut Vec<String>) {
+    let previous_errors = errors.len();
     check_schema(schema, at, errors);
-    if !errors.is_empty() {
+    if errors.len() != previous_errors {
         return;
     }
     let Some(schema) = schema.as_object() else {
@@ -321,8 +322,8 @@ fn repair_queue_records_carry_the_fields_an_agent_reruns_from() {
     }
 }
 
-/// A contract that accepts anything proves nothing: each constraint the schema
-/// states has to reject the matching corruption of a real report.
+/// Isolated corruptions exercise required fields, scalar types, bounds, enums,
+/// fingerprints and constants on a real report.
 #[test]
 fn the_schema_rejects_corrupted_reports() {
     let base = read_json(&repo_root().join("agent/baselines/main.repo-score.json"));
@@ -354,6 +355,170 @@ fn the_schema_rejects_corrupted_reports() {
             !errors_for(&report).is_empty(),
             "the schema must reject a report with a {name}"
         );
+    }
+}
+
+/// A diagnostic in one sibling must not suppress validation of another,
+/// including through local references and array items.
+#[test]
+fn independent_corrupted_siblings_report_both_errors() {
+    let mut report = read_json(
+        &repo_root()
+            .join("crates/jankurai-audit-analyzers/tests/fixtures/audit-1.7.6/repo-score.json"),
+    );
+    report["findings"][0]["confidence"] = Value::from(-0.1);
+    report["findings"][0]["severity"] = Value::from("nagging");
+    let errors = errors_for(&report);
+    assert_eq!(errors.len(), 2, "{errors:?}");
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.starts_with("report.findings[0].confidence:")),
+        "{errors:?}"
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.starts_with("report.findings[0].severity:")),
+        "{errors:?}"
+    );
+}
+
+/// Each mutation starts from an accepted artifact and must produce exactly one
+/// diagnostic at the corrupted field, so an unrelated error cannot mask it.
+#[test]
+fn isolated_nested_contract_corruptions_are_rejected() {
+    let base = read_json(
+        &repo_root()
+            .join("crates/jankurai-audit-analyzers/tests/fixtures/audit-1.7.6/repo-score.json"),
+    );
+    assert!(errors_for(&base).is_empty());
+    for (pointer, replacement, diagnostic) in [
+        (
+            "/findings/0/confidence",
+            serde_json::json!(-0.1),
+            "report.findings[0].confidence: -0.1 is below minimum 0",
+        ),
+        (
+            "/findings/0/confidence",
+            serde_json::json!(1.1),
+            "report.findings[0].confidence: 1.1 is above maximum 1",
+        ),
+        (
+            "/findings/0/confidence",
+            serde_json::json!("0.5"),
+            "report.findings[0].confidence: expected type number",
+        ),
+        (
+            "/score",
+            serde_json::json!(-1),
+            "report.score: -1 is below minimum 0",
+        ),
+        (
+            "/scope",
+            serde_json::json!([]),
+            "report.scope: expected type object",
+        ),
+        (
+            "/decision",
+            serde_json::json!([]),
+            "report.decision: expected type object",
+        ),
+        (
+            "/git",
+            serde_json::json!([]),
+            "report.git: expected type object",
+        ),
+        (
+            "/policy",
+            serde_json::json!([]),
+            "report.policy: expected type object",
+        ),
+        (
+            "/dimensions/0",
+            serde_json::json!([]),
+            "report.dimensions[0]: expected type object",
+        ),
+        (
+            "/findings/0",
+            serde_json::json!([]),
+            "report.findings[0]: expected type object",
+        ),
+        (
+            "/agent_fix_queue/0",
+            serde_json::json!([]),
+            "report.agent_fix_queue[0]: expected type object",
+        ),
+        (
+            "/scope/paths",
+            serde_json::json!([false]),
+            "report.scope.paths[0]: expected type string",
+        ),
+        (
+            "/git/head",
+            serde_json::json!(false),
+            "report.git.head: expected one of types [String(\"string\"), String(\"null\")]",
+        ),
+        (
+            "/dimensions/0/weighted_points",
+            serde_json::json!("1"),
+            "report.dimensions[0].weighted_points: expected type number",
+        ),
+        (
+            "/agent_fix_queue/0/task",
+            serde_json::json!(false),
+            "report.agent_fix_queue[0].task: expected type string",
+        ),
+    ] {
+        let mut report = base.clone();
+        *report
+            .pointer_mut(pointer)
+            .unwrap_or_else(|| panic!("fixture lacks {pointer}")) = replacement;
+        assert_eq!(errors_for(&report), vec![diagnostic], "{pointer}");
+    }
+    for pointer in [
+        "/scope",
+        "/decision",
+        "/git",
+        "/policy",
+        "/dimensions/0",
+        "/findings/0",
+        "/agent_fix_queue/0",
+    ] {
+        let mut report = base.clone();
+        let object = report
+            .pointer_mut(pointer)
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
+        let field = match pointer {
+            "/scope" => "mode",
+            "/decision" => "passed",
+            "/git" => "head",
+            "/policy" => "path",
+            "/dimensions/0" => "name",
+            "/findings/0" => "rule_id",
+            _ => "task",
+        };
+        assert!(object.remove(field).is_some());
+        let errors = errors_for(&report);
+        assert_eq!(errors.len(), 1, "{pointer}: {errors:?}");
+        assert!(
+            errors[0].ends_with(&format!("missing required field `{field}`")),
+            "{errors:?}"
+        );
+    }
+}
+
+#[test]
+fn confidence_boundaries_are_accepted() {
+    let mut report = read_json(
+        &repo_root()
+            .join("crates/jankurai-audit-analyzers/tests/fixtures/audit-1.7.6/repo-score.json"),
+    );
+    for confidence in [0.0, 0.5, 1.0] {
+        report["findings"][0]["confidence"] = Value::from(confidence);
+        assert!(errors_for(&report).is_empty());
     }
 }
 
