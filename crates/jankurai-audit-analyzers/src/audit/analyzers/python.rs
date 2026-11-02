@@ -41,10 +41,8 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
     let mut score = 40;
     let mut evidence = vec![];
     let mut notes = vec![];
-    let bad_paths: Vec<_> = bad_python_path_hits(ctx)
-        .into_iter()
-        .map(|f| f.rel_path)
-        .collect();
+    let bad_hits = bad_python_path_hits(ctx);
+    let bad_paths: Vec<_> = bad_hits.iter().map(|f| f.rel_path.clone()).collect();
     if bad_paths.is_empty() {
         score += 30;
         evidence.push("Python stays inside exception-only non-product roots".into());
@@ -89,10 +87,7 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
                 .into(),
         );
     }
-    if bad_paths
-        .iter()
-        .any(|p| p.contains("psycopg") || p.contains("sqlalchemy"))
-    {
+    if bad_hits.iter().any(|f| python_imports_db_driver(&f.text)) {
         score -= 20;
         evidence.push("Python directly touches DB truth outside AI service".into());
     }
@@ -102,4 +97,28 @@ pub fn analyze(ctx: &AuditContext) -> DimensionResult {
         evidence,
         notes,
     )
+}
+
+/// True when Python source imports a database driver (`psycopg`, `psycopg2`, `sqlalchemy`),
+/// judged from import statements rather than the file name, so a file merely called
+/// `sqlalchemy.py` does not count and `db/reconcile.py` that imports `psycopg` does.
+fn python_imports_db_driver(text: &str) -> bool {
+    const DRIVERS: &[&str] = &["psycopg", "psycopg2", "psycopg_pool", "sqlalchemy"];
+    let is_driver = |module: &str| {
+        let root = module.trim().split('.').next().unwrap_or("");
+        DRIVERS.contains(&root)
+    };
+    text.lines().any(|line| {
+        let line = line.trim_start();
+        if let Some(rest) = line.strip_prefix("from ") {
+            return is_driver(rest.split_whitespace().next().unwrap_or(""));
+        }
+        if let Some(rest) = line.strip_prefix("import ") {
+            let rest = rest.split('#').next().unwrap_or("");
+            return rest
+                .split(',')
+                .any(|item| is_driver(item.split_whitespace().next().unwrap_or("")));
+        }
+        false
+    })
 }

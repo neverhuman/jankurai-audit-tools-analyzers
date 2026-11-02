@@ -591,3 +591,47 @@ fn python_containment_keeps_operational_and_db_paths_in_scope() {
             .any(|e| e.contains("directly touches DB truth")));
     }
 }
+
+#[test]
+fn python_db_truth_follows_source_imports_not_filenames() {
+    use jankurai_audit_analyzers::audit::analyzers::python;
+    let touches = |r: &jankurai_audit_kernel::model::DimensionResult| {
+        r.evidence
+            .iter()
+            .any(|e| e.contains("directly touches DB truth"))
+    };
+    for self_audit in [false, true] {
+        for (path, src) in [
+            ("db/reconcile.py", "import psycopg\n"),
+            ("ops/backfill.py", "from sqlalchemy import create_engine\n"),
+            ("ops/backfill.py", "import os, psycopg2 as pg\n"),
+        ] {
+            let mut context = ctx(vec![code_file(path, src)]);
+            context.self_audit = self_audit;
+            let result = python::analyze(&context);
+            assert!(touches(&result), "{path} {src:?}: {result:?}");
+            assert!(result
+                .evidence
+                .iter()
+                .any(|e| e.contains("outside the allowed roots")));
+        }
+        // Filename-only controls: still bad roots, but no DB driver in the source.
+        for (path, src) in [
+            ("db/sqlalchemy.py", "print('hi')\n"),
+            (
+                "ops/psycopg_notes.py",
+                "# sqlalchemy psycopg\nx = 'import psycopg'\n",
+            ),
+            ("db/reconcile.py", "import psycopg_not_a_driver_here\n"),
+        ] {
+            let mut context = ctx(vec![code_file(path, src)]);
+            context.self_audit = self_audit;
+            let result = python::analyze(&context);
+            assert!(!touches(&result), "{path}: {result:?}");
+            assert!(result
+                .evidence
+                .iter()
+                .any(|e| e.contains("outside the allowed roots")));
+        }
+    }
+}
