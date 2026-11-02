@@ -153,6 +153,16 @@ the schemas, checks every inline `agent_fix_queue` record against the
 repair-queue contract, proves the schemas reject corrupted reports, and fails
 closed on any schema keyword its validator does not implement.
 
+The audit lane clears the previous report and queue before it runs, then
+`assert_repair_queue` (`ops/ci/lib.sh`) checks the queue. An audit with no
+findings is valid: the auditor then writes a queue holding a single newline and
+the report's `agent_fix_queue` is empty, so zero records passes. A zero-byte
+file, a line that is not a JSON object with string `path`, `priority`, `task` and
+`why`, a missing file, or a record count that differs from the report's
+`agent_fix_queue` fails the lane. These checks run even when the audit exits
+nonzero, and the audit's own exit status is still returned afterwards.
+`bash ops/ci/auditor-test.sh` covers each case with a controlled auditor.
+
 To triage a finding: read `rerun_command` and `docs_url` on the finding, rerun
 that lane, then diff the new report's `findings[].fingerprint` set against the
 retained one. A finding that disappears without its fingerprint being accounted

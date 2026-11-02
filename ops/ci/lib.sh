@@ -39,6 +39,42 @@ assert_artifact() {
   log "artifact present: $artifact"
 }
 
+# assert_repair_queue <queue> <report> -- validate the repair queue the audit
+# promised. The auditor writes one JSON object per line and, for an audit with
+# no findings, a single newline: zero records is a valid queue, a zero-byte
+# file is a truncated write. Every record must carry the fields the
+# schemas/repair-queue.schema.json contract requires as strings, and the record
+# count must equal the report's agent_fix_queue, so output left by an earlier
+# run or cut short cannot pass.
+assert_repair_queue() {
+  local queue="$1" report="$2" records expected
+  assert_artifact "$queue"
+  if [ ! -s "$REPO_ROOT/$queue" ]; then
+    printf '[ci] repair queue is empty (zero bytes, truncated write?): %s\n' "$queue" >&2
+    return 1
+  fi
+  require_tool jq || return 1
+  if ! records="$(jq -e -s '
+      if all(.[]; type == "object"
+          and (.path | type == "string") and (.priority | type == "string")
+          and (.task | type == "string") and (.why | type == "string"))
+      then length else error("record missing a required string field") end
+    ' "$REPO_ROOT/$queue" 2>&1)"; then
+    printf '[ci] repair queue is malformed: %s: %s\n' "$queue" "$records" >&2
+    return 1
+  fi
+  expected="$(jq -e '(.agent_fix_queue // []) | length' "$REPO_ROOT/$report")" || {
+    printf '[ci] cannot read agent_fix_queue from %s\n' "$report" >&2
+    return 1
+  }
+  if [ "$records" != "$expected" ]; then
+    printf '[ci] repair queue is stale or partial: %s has %s records, %s lists %s\n' \
+      "$queue" "$records" "$report" "$expected" >&2
+    return 1
+  fi
+  log "repair queue valid: $records record(s)"
+}
+
 # Resolve once so the audit and its receipt describe the same executable.
 require_auditor() {
   local want got version digest receipt

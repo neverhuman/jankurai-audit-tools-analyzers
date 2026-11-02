@@ -18,11 +18,17 @@ if [[ "$1" == --version ]]; then
 fi
 printf '%s\n' "$*" >> calls
 mkdir -p .jankurai
-printf '{}\n' > .jankurai/repo-score.json
+rec='{"path":"README.md","priority":"medium","task":"t","why":"w"}'
+# TEST_QUEUE picks what the stub plays: populated (default), clean (the real
+# auditor's output for zero findings: one newline), zero (zero bytes), garbage,
+# badrecord, stale (queue disagrees with the report) or skip (never written).
+mode="${TEST_QUEUE:-populated}"
+if [[ "$mode" == clean ]]; then
+  printf '{"agent_fix_queue":[]}\n' > .jankurai/repo-score.json
+else
+  printf '{"agent_fix_queue":[%s]}\n' "$rec" > .jankurai/repo-score.json
+fi
 printf 'score\n' > .jankurai/repo-score.md
-# Mirror the real auditor: write the repair queue to the path the lane asks
-# for. TEST_SKIP_QUEUE=1 plays an auditor that promises the queue and does not
-# write it, so the lane's artifact assertion stays load-bearing.
 queue=''
 while [[ $# -gt 0 ]]; do
   if [[ "$1" == --repair-queue-jsonl ]]; then
@@ -30,9 +36,16 @@ while [[ $# -gt 0 ]]; do
   fi
   shift
 done
-if [[ -n "$queue" && "${TEST_SKIP_QUEUE:-0}" != 1 ]]; then
+if [[ -n "$queue" && "$mode" != skip ]]; then
   mkdir -p "$(dirname "$queue")"
-  printf '{"path":"README.md","priority":"medium","task":"t","why":"w"}\n' > "$queue"
+  case "$mode" in
+    populated) printf '%s\n' "$rec" > "$queue" ;;
+    clean) printf '\n' > "$queue" ;;
+    zero) : > "$queue" ;;
+    garbage) printf '{"path":\n' > "$queue" ;;
+    badrecord) printf '{"path":"README.md"}\n' > "$queue" ;;
+    stale) printf '%s\n%s\n' "$rec" "$rec" > "$queue" ;;
+  esac
 fi
 exit "${TEST_AUDIT_EXIT:-0}"
 SH
@@ -64,16 +77,32 @@ bash scripts/ci-local.sh audit
 grep -F 'audit .' calls
 grep -F -- '--repair-queue-jsonl target/jankurai/repair-queue.jsonl' calls
 test -s target/jankurai/repair-queue.jsonl
-# A missing repair queue is a missing promise, not a pass.
+# A clean audit has zero findings: the real auditor writes one newline and the
+# report lists no fixes. That is a valid, empty queue.
 rm calls target/jankurai/repair-queue.jsonl
-export TEST_SKIP_QUEUE=1
-if bash scripts/ci-local.sh audit > output 2>&1; then
-  echo 'missing repair queue was accepted' >&2
+TEST_QUEUE=clean bash scripts/ci-local.sh audit
+test "$(wc -c < target/jankurai/repair-queue.jsonl)" -eq 1
+# Everything else that is not a faithful queue is a failed promise, and a
+# previous run's queue must not satisfy the assertion.
+queue_rejected() {
+  if TEST_QUEUE="$1" bash scripts/ci-local.sh audit > output 2>&1; then
+    echo "repair queue mode $1 was accepted" >&2
+    exit 1
+  fi
+  grep -F -- "$2" output
+}
+queue_rejected skip 'expected artifact missing: target/jankurai/repair-queue.jsonl'
+queue_rejected zero 'repair queue is empty'
+queue_rejected garbage 'repair queue is malformed'
+queue_rejected badrecord 'repair queue is malformed'
+queue_rejected stale 'repair queue is stale or partial'
+# Rejection also holds when the audit itself failed: the failure is not masked
+# into success, and a bad queue is not excused by it.
+if TEST_AUDIT_EXIT=1 TEST_QUEUE=zero bash scripts/ci-local.sh audit > output 2>&1; then
+  echo 'bad queue accepted after audit failure' >&2
   exit 1
 fi
-grep -F 'expected artifact missing: target/jankurai/repair-queue.jsonl' output
-unset TEST_SKIP_QUEUE
-rm calls
+rm -f calls
 bash scripts/ci-local.sh audit
 grep -Fx "version: jankurai $want" target/jankurai/auditor.txt
 digest="$(sha256sum bin/jankurai)"
