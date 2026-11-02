@@ -322,8 +322,11 @@ fn repair_queue_records_carry_the_fields_an_agent_reruns_from() {
     }
 }
 
-/// Isolated corruptions exercise required fields, scalar types, bounds, enums,
-/// fingerprints and constants on a real report.
+/// A smoke control: six corruptions of a real report, each of a different kind
+/// (required field, scalar type, bound, enum, fingerprint, constant), must be
+/// rejected. These only assert that validation fails; the isolated, one
+/// diagnostic per constraint controls live in
+/// `every_declared_constraint_has_an_isolated_negative_control`.
 #[test]
 fn the_schema_rejects_corrupted_reports() {
     let base = read_json(&repo_root().join("agent/baselines/main.repo-score.json"));
@@ -589,5 +592,267 @@ fn real_176_repair_queue_matches_the_report_and_contract() {
             &mut errors,
         );
         assert!(errors.is_empty(), "{errors:?}");
+    }
+}
+
+/// Every bound, enum, constant, pattern and required field the two schemas
+/// declare needs its own negative control, or a constraint can be removed from
+/// a schema without a test noticing. Each mutation starts from an accepted
+/// report and must produce exactly one diagnostic, at the mutated field.
+#[test]
+fn every_declared_constraint_has_an_isolated_negative_control() {
+    let base = read_json(
+        &repo_root()
+            .join("crates/jankurai-audit-analyzers/tests/fixtures/audit-1.7.6/repo-score.json"),
+    );
+    assert!(errors_for(&base).is_empty());
+    for (pointer, replacement, path, fragment) in [
+        // Numeric bounds, below and above, on every field that declares them.
+        (
+            "/score",
+            serde_json::json!(-1),
+            "report.score",
+            "below minimum 0",
+        ),
+        (
+            "/score",
+            serde_json::json!(101),
+            "report.score",
+            "above maximum 100",
+        ),
+        (
+            "/raw_score",
+            serde_json::json!(-1),
+            "report.raw_score",
+            "below minimum 0",
+        ),
+        (
+            "/raw_score",
+            serde_json::json!(101),
+            "report.raw_score",
+            "above maximum 100",
+        ),
+        (
+            "/decision/minimum_score",
+            serde_json::json!(-1),
+            "report.decision.minimum_score",
+            "below minimum 0",
+        ),
+        (
+            "/decision/minimum_score",
+            serde_json::json!(101),
+            "report.decision.minimum_score",
+            "above maximum 100",
+        ),
+        (
+            "/decision/hard_findings",
+            serde_json::json!(-1),
+            "report.decision.hard_findings",
+            "below minimum 0",
+        ),
+        (
+            "/decision/soft_findings",
+            serde_json::json!(-1),
+            "report.decision.soft_findings",
+            "below minimum 0",
+        ),
+        (
+            "/git/changed_files",
+            serde_json::json!(-1),
+            "report.git.changed_files",
+            "below minimum 0",
+        ),
+        (
+            "/policy/minimum_score",
+            serde_json::json!(-1),
+            "report.policy.minimum_score",
+            "below minimum 0",
+        ),
+        (
+            "/policy/minimum_score",
+            serde_json::json!(101),
+            "report.policy.minimum_score",
+            "above maximum 100",
+        ),
+        (
+            "/dimensions/0/weight",
+            serde_json::json!(-1),
+            "report.dimensions[0].weight",
+            "below minimum 0",
+        ),
+        (
+            "/findings/0/confidence",
+            serde_json::json!(-0.1),
+            "report.findings[0].confidence",
+            "below minimum 0",
+        ),
+        (
+            "/findings/0/confidence",
+            serde_json::json!(1.1),
+            "report.findings[0].confidence",
+            "above maximum 1",
+        ),
+        // Enumerations.
+        (
+            "/decision/status",
+            serde_json::json!("maybe"),
+            "report.decision.status",
+            "is not one of",
+        ),
+        (
+            "/findings/0/severity",
+            serde_json::json!("nagging"),
+            "report.findings[0].severity",
+            "is not one of",
+        ),
+        (
+            "/findings/0/hardness",
+            serde_json::json!("squishy"),
+            "report.findings[0].hardness",
+            "is not one of",
+        ),
+        // Constants.
+        (
+            "/schema_url",
+            serde_json::json!("schemas/other.schema.json"),
+            "report.schema_url",
+            "expected const",
+        ),
+        (
+            "/standard",
+            serde_json::json!("something-else"),
+            "report.standard",
+            "expected const",
+        ),
+        // The sha256 pattern, on every field that references it.
+        (
+            "/report_fingerprint",
+            serde_json::json!("sha256:zz"),
+            "report.report_fingerprint",
+            "does not match",
+        ),
+        (
+            "/input_fingerprint",
+            serde_json::json!("sha256:zz"),
+            "report.input_fingerprint",
+            "does not match",
+        ),
+        (
+            "/policy_fingerprint",
+            serde_json::json!("sha256:zz"),
+            "report.policy_fingerprint",
+            "does not match",
+        ),
+        (
+            "/findings/0/fingerprint",
+            serde_json::json!("deadbeef"),
+            "report.findings[0].fingerprint",
+            "does not match",
+        ),
+    ] {
+        let mut report = base.clone();
+        *report
+            .pointer_mut(pointer)
+            .unwrap_or_else(|| panic!("fixture lacks {pointer}")) = replacement;
+        let errors = errors_for(&report);
+        assert_eq!(errors.len(), 1, "{pointer}: {errors:?}");
+        assert!(
+            errors[0].starts_with(&format!("{path}: ")) && errors[0].contains(fragment),
+            "{pointer}: {errors:?}"
+        );
+    }
+    // Required fields the report-level and queue-level schemas declare.
+    for (pointer, field) in [
+        ("", "report_fingerprint"),
+        ("", "input_fingerprint"),
+        ("", "policy_fingerprint"),
+        ("", "dirty_worktree"),
+        ("/scope", "paths"),
+        ("/decision", "status"),
+        ("/decision", "minimum_score"),
+        ("/decision", "hard_findings"),
+        ("/decision", "soft_findings"),
+        ("/git", "base"),
+        ("/git", "changed_files"),
+        ("/git", "mode"),
+        ("/git", "dirty_worktree"),
+        ("/policy", "minimum_score"),
+        ("/policy", "fail_on"),
+        ("/policy", "advisory_on"),
+        ("/dimensions/0", "weight"),
+        ("/dimensions/0", "score"),
+        ("/dimensions/0", "weighted_points"),
+        ("/dimensions/0", "evidence"),
+        ("/dimensions/0", "notes"),
+        ("/findings/0", "severity"),
+        ("/findings/0", "hardness"),
+        ("/findings/0", "path"),
+        ("/agent_fix_queue/0", "path"),
+        ("/agent_fix_queue/0", "priority"),
+        ("/agent_fix_queue/0", "why"),
+    ] {
+        let mut report = base.clone();
+        let object = if pointer.is_empty() {
+            report.as_object_mut().unwrap()
+        } else {
+            report
+                .pointer_mut(pointer)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+        };
+        assert!(
+            object.remove(field).is_some(),
+            "fixture lacks {pointer}/{field}"
+        );
+        let errors = errors_for(&report);
+        assert_eq!(errors.len(), 1, "{pointer}/{field}: {errors:?}");
+        assert!(
+            errors[0].ends_with(&format!("missing required field `{field}`")),
+            "{errors:?}"
+        );
+    }
+}
+
+/// The accepting side of every numeric bound: the declared endpoints must stay
+/// valid, so a negative control cannot be satisfied by an over-tight schema.
+#[test]
+fn declared_numeric_bounds_accept_their_endpoints() {
+    let base = read_json(
+        &repo_root()
+            .join("crates/jankurai-audit-analyzers/tests/fixtures/audit-1.7.6/repo-score.json"),
+    );
+    for (pointer, values) in [
+        ("/score", vec![serde_json::json!(0), serde_json::json!(100)]),
+        (
+            "/raw_score",
+            vec![serde_json::json!(0), serde_json::json!(100)],
+        ),
+        (
+            "/decision/minimum_score",
+            vec![serde_json::json!(0), serde_json::json!(100)],
+        ),
+        ("/decision/hard_findings", vec![serde_json::json!(0)]),
+        ("/decision/soft_findings", vec![serde_json::json!(0)]),
+        ("/git/changed_files", vec![serde_json::json!(0)]),
+        (
+            "/policy/minimum_score",
+            vec![serde_json::json!(0), serde_json::json!(100)],
+        ),
+        ("/dimensions/0/weight", vec![serde_json::json!(0)]),
+        (
+            "/findings/0/confidence",
+            vec![serde_json::json!(0.0), serde_json::json!(1.0)],
+        ),
+    ] {
+        for value in values {
+            let mut report = base.clone();
+            *report.pointer_mut(pointer).unwrap() = value.clone();
+            assert_eq!(
+                errors_for(&report),
+                Vec::<String>::new(),
+                "{pointer} = {value}"
+            );
+        }
     }
 }
